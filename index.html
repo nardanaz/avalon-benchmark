@@ -1,0 +1,940 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Avalon World Agency - Benchmark Dashboard</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#9650;</text></svg>">
+  <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@300;400;500;600;700;800;900&family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.10.3/Recharts.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Poppins', sans-serif; background: #0a0618; color: #f8fafc; overflow-x: hidden; }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #150d2e; }
+    ::-webkit-scrollbar-thumb { background: #7d03ff40; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #7d03ff70; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+    @keyframes gradientShift { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
+    .fade-in { animation: fadeIn 0.4s ease forwards; }
+    input:focus, select:focus { outline: none; border-color: #7d03ff !important; }
+    button { transition: all 0.2s ease; }
+    button:hover { filter: brightness(1.1); }
+    .tooltip-custom { position: absolute; background: #150d2e; border: 1px solid #2a1f4e; border-radius: 8px; padding: 8px 12px; font-size: 12px; pointer-events: none; z-index: 100; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useCallback, useRef, useMemo } = React;
+    const {
+      RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
+      BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+    } = Recharts;
+
+    // ─── CONFIG ───
+    // CHANGE THESE PASSWORDS:
+    const TEAM_PASSWORD = "avalon2026";
+    const CLIENT_PASSWORDS = {}; // Will be generated per-client
+
+    // ─── AVALON BRANDING ───
+    const C = {
+      primary: "#7d03ff", primaryLight: "#9b3fff", primaryDark: "#6200cc",
+      secondary: "#ff7939", secondaryLight: "#ff9a6c",
+      accent: "#00ff00", accentLight: "#66ff66",
+      success: "#00ff00", warning: "#ff7939", danger: "#ef4444",
+      bg: "#0a0618", bgCard: "#150d2e", bgHover: "#1f1545",
+      text: "#f8fafc", textMuted: "#b8a9d4", textDim: "#7c6b9e",
+      border: "#2a1f4e"
+    };
+    const CHART_C = ["#7d03ff", "#ff7939", "#00ff00", "#9b3fff", "#ff9a6c", "#66ff66", "#c77dff", "#ffb380"];
+
+    // ─── SVG ICONS (inline to avoid dependencies) ───
+    const Icon = ({ d, size = 18, color = C.textMuted, style = {} }) => (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style}>
+        <path d={d} />
+      </svg>
+    );
+
+    const Icons = {
+      users: (p) => <Icon {...p} d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75M9 7a4 4 0 1 0 0-8 4 4 0 0 0 0 8z" />,
+      globe: (p) => <Icon {...p} d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10A15.3 15.3 0 0 1 12 2z" />,
+      search: (p) => <Icon {...p} d="M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM21 21l-4.35-4.35" />,
+      plus: (p) => <Icon {...p} d="M12 5v14M5 12h14" />,
+      trash: (p) => <Icon {...p} d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />,
+      trendUp: (p) => <Icon {...p} d="M23 6l-9.5 9.5-5-5L1 18" />,
+      trendDown: (p) => <Icon {...p} d="M23 18l-9.5-9.5-5 5L1 6" />,
+      lightbulb: (p) => <Icon {...p} d="M9 18h6M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z" />,
+      chevronR: (p) => <Icon {...p} d="M9 18l6-6-6-6" />,
+      chevronD: (p) => <Icon {...p} d="M6 9l6 6 6-6" />,
+      barChart: (p) => <Icon {...p} d="M12 20V10M18 20V4M6 20v-4" />,
+      target: (p) => <Icon {...p} d="M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 18a6 6 0 1 0 0-12 6 6 0 0 0 0 12zM12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4z" />,
+      zap: (p) => <Icon {...p} d="M13 2L3 14h9l-1 10 10-12h-9l1-10z" />,
+      layout: (p) => <Icon {...p} d="M19 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2zM3 9h18M9 21V9" />,
+      edit: (p) => <Icon {...p} d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />,
+      x: (p) => <Icon {...p} d="M18 6L6 18M6 6l12 12" />,
+      award: (p) => <Icon {...p} d="M12 15a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM8.21 13.89L7 23l5-3 5 3-1.21-9.12" />,
+      mail: (p) => <Icon {...p} d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2zM22 6l-10 7L2 6" />,
+      layers: (p) => <Icon {...p} d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />,
+      download: (p) => <Icon {...p} d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />,
+      share: (p) => <Icon {...p} d="M18 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 22a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM8.59 13.51l6.83 3.98M15.41 6.51l-6.82 3.98" />,
+      lock: (p) => <Icon {...p} d="M19 11H5a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2zM7 11V7a5 5 0 0 1 10 0v4" />,
+      eye: (p) => <Icon {...p} d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" />,
+      copy: (p) => <Icon {...p} d="M20 9h-9a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2zM5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />,
+      check: (p) => <Icon {...p} d="M20 6L9 17l-5-5" />,
+      instagram: (p) => <Icon {...p} d="M16 4H8a4 4 0 0 0-4 4v8a4 4 0 0 0 4 4h8a4 4 0 0 0 4-4V8a4 4 0 0 0-4-4zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" />,
+      facebook: (p) => <Icon {...p} d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z" />,
+      twitter: (p) => <Icon {...p} d="M23 3a10.9 10.9 0 0 1-3.14 1.53 4.48 4.48 0 0 0-7.86 3v1A10.66 10.66 0 0 1 3 4s-4 9 5 13a11.64 11.64 0 0 1-7 2c9 5 20 0 20-11.5a4.5 4.5 0 0 0-.08-.83A7.72 7.72 0 0 0 23 3z" />,
+      linkedin: (p) => <Icon {...p} d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6zM2 9h4v12H2zM4 6a2 2 0 1 0 0-4 2 2 0 0 0 0 4z" />,
+    };
+
+    // ─── AVALON LOGO ───
+    const AvalonLogo = ({ size = 40 }) => (
+      <svg width={size} height={size * 0.75} viewBox="0 0 120 90" fill="none">
+        <path d="M5 80 L30 15 L55 80" stroke="#7d03ff" strokeWidth="6" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+        <path d="M45 15 L62 65 L79 15" stroke={C.text} strokeWidth="6" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+        <line x1="72" y1="25" x2="110" y2="25" stroke="#7d03ff" strokeWidth="5" strokeLinecap="round"/>
+        <line x1="72" y1="45" x2="110" y2="45" stroke="#7d03ff" strokeWidth="5" strokeLinecap="round"/>
+        <line x1="72" y1="65" x2="110" y2="65" stroke="#7d03ff" strokeWidth="5" strokeLinecap="round"/>
+      </svg>
+    );
+
+    // ─── DEMO DATA ───
+    const createClient = (name, ig, fb, tw, li, web) => ({
+      id: Math.random().toString(36).substr(2, 9),
+      name, type: "client",
+      platforms: {
+        instagram: { handle: ig, followers: Math.floor(Math.random()*50000)+2000, engagement: +(Math.random()*5+1).toFixed(2), postsPerWeek: Math.floor(Math.random()*7)+2, avgLikes: Math.floor(Math.random()*2000)+100, avgComments: Math.floor(Math.random()*200)+10, reelsViews: Math.floor(Math.random()*30000)+1000, storiesPerDay: Math.floor(Math.random()*5)+1, contentMix: { images: 40, reels: 35, carousels: 20, stories: 5 } },
+        facebook: { handle: fb, followers: Math.floor(Math.random()*30000)+1000, engagement: +(Math.random()*3+0.5).toFixed(2), postsPerWeek: Math.floor(Math.random()*5)+1, avgReactions: Math.floor(Math.random()*500)+50, avgShares: Math.floor(Math.random()*100)+5 },
+        twitter: { handle: tw, followers: Math.floor(Math.random()*20000)+500, engagement: +(Math.random()*4+0.5).toFixed(2), tweetsPerWeek: Math.floor(Math.random()*14)+3 },
+        linkedin: { handle: li, followers: Math.floor(Math.random()*15000)+500, engagement: +(Math.random()*6+1).toFixed(2), postsPerWeek: Math.floor(Math.random()*5)+1 },
+        web: { url: web, monthlyVisits: Math.floor(Math.random()*100000)+5000, bounceRate: +(Math.random()*40+30).toFixed(1), avgSessionDuration: +(Math.random()*3+1).toFixed(1), domainAuthority: Math.floor(Math.random()*60)+15 },
+        seo: { keywordsRanked: Math.floor(Math.random()*500)+50, top10Keywords: Math.floor(Math.random()*50)+5, backlinks: Math.floor(Math.random()*5000)+200, organicTraffic: Math.floor(Math.random()*50000)+2000 },
+        email: { subscribers: Math.floor(Math.random()*10000)+500, openRate: +(Math.random()*25+15).toFixed(1), clickRate: +(Math.random()*8+1).toFixed(1), campaignsPerMonth: Math.floor(Math.random()*8)+2 },
+        googleAds: { monthlyBudget: Math.floor(Math.random()*5000)+500, cpc: +(Math.random()*2+0.3).toFixed(2), ctr: +(Math.random()*5+1).toFixed(2), conversions: Math.floor(Math.random()*200)+20, roas: +(Math.random()*4+1).toFixed(2) }
+      },
+      competitors: [], notes: "",
+      sharePassword: Math.random().toString(36).substr(2, 8)
+    });
+
+    const initClients = () => {
+      const saved = null; // Could use server storage in future
+      const c = [
+        createClient("FitLife Gym", "@fitlifegym", "FitLifeGym", "@fitlifegym", "fitlife-gym", "fitlifegym.com"),
+        createClient("Cafe Organico", "@cafeorganico", "CafeOrganicoBA", "@cafeorganico", "cafe-organico", "cafeorganico.com.ar"),
+        createClient("TechSoft Solutions", "@techsoft", "TechSoftSolutions", "@techsoftsol", "techsoft-solutions", "techsoft.io"),
+      ];
+      c[0].competitors = [
+        {...createClient("CrossFit Zone","@crossfitzone","CrossFitZone","@crossfitzone","crossfit-zone","crossfitzone.com"), type:"competitor"},
+        {...createClient("PowerGym","@powergym","PowerGymOficial","@powergym","power-gym","powergym.com.ar"), type:"competitor"},
+      ];
+      c[1].competitors = [
+        {...createClient("Green Coffee","@greencoffee","GreenCoffeeCo","@greencoffee","green-coffee","greencoffee.com"), type:"competitor"},
+      ];
+      c[2].competitors = [
+        {...createClient("DevCore Agency","@devcore","DevCoreAgency","@devcore","devcore-agency","devcore.io"), type:"competitor"},
+        {...createClient("NexaTech","@nexatech","NexaTech","@nexatech","nexatech","nexatech.com"), type:"competitor"},
+      ];
+      return c;
+    };
+
+    // ─── UTILS ───
+    const fmt = (n) => { if(n>=1e6) return (n/1e6).toFixed(1)+"M"; if(n>=1e3) return (n/1e3).toFixed(1)+"K"; return n?.toString()||"0"; };
+    const scoreColor = (s) => s >= 80 ? C.success : s >= 60 ? C.warning : C.danger;
+
+    const platScore = (e, p) => {
+      const d = e.platforms[p]; if(!d) return 0;
+      const scores = {
+        instagram: () => Math.min(100, Math.round((d.followers/500)+(d.engagement*10)+(d.postsPerWeek*3))),
+        facebook: () => Math.min(100, Math.round((d.followers/400)+(d.engagement*12)+(d.postsPerWeek*4))),
+        twitter: () => Math.min(100, Math.round((d.followers/300)+(d.engagement*10)+(d.tweetsPerWeek*2))),
+        linkedin: () => Math.min(100, Math.round((d.followers/200)+(d.engagement*12)+(d.postsPerWeek*5))),
+        web: () => Math.min(100, Math.round((d.monthlyVisits/1000)+(100-d.bounceRate)+(d.domainAuthority))),
+        seo: () => Math.min(100, Math.round((d.top10Keywords*2)+(d.backlinks/100)+(d.organicTraffic/1000))),
+        email: () => Math.min(100, Math.round((d.openRate*2)+(d.clickRate*5)+(d.subscribers/200))),
+        googleAds: () => Math.min(100, Math.round((d.ctr*8)+(d.roas*15)+(d.conversions/5))),
+      };
+      return (scores[p] || (() => 0))();
+    };
+
+    const overallScore = (e) => {
+      const ps = ["instagram","facebook","twitter","linkedin","web","seo","email","googleAds"];
+      return Math.round(ps.map(p => platScore(e,p)).reduce((a,b) => a+b, 0) / ps.length);
+    };
+
+    // ─── AI SUGGESTIONS ───
+    const genSuggestions = (client, comps) => {
+      const s = [], cp = client.platforms;
+      const avgComp = (key, sub) => comps.length > 0 ? comps.reduce((sum,c) => sum + (c.platforms[key]?.[sub]||0), 0) / comps.length : 0;
+
+      const avgIG = avgComp("instagram","engagement");
+      if(cp.instagram?.engagement < avgIG) s.push({ priority:"alta", platform:"Instagram", title:"Engagement por debajo del promedio competitivo", detail:`Tu engagement (${cp.instagram.engagement}%) esta por debajo del promedio de competidores (${avgIG.toFixed(2)}%). Recomendaciones: aumentar Reels, usar CTAs en captions, responder comentarios en menos de 1 hora, y hacer Stories interactivas.`, impact:"Alto impacto en alcance organico" });
+
+      if(cp.instagram?.contentMix?.reels < 40) s.push({ priority:"alta", platform:"Instagram", title:"Aumentar proporcion de Reels", detail:`Los Reels representan solo el ${cp.instagram.contentMix.reels}% del contenido. El algoritmo prioriza Reels con 2-3x mas alcance. Objetivo: 45-50% del contenido total.`, impact:"Incremento estimado de 40-60% en alcance" });
+
+      const avgSEO = avgComp("seo","top10Keywords");
+      if(cp.seo?.top10Keywords < avgSEO) s.push({ priority:"alta", platform:"SEO", title:"Deficit de keywords en top 10", detail:`Tenes ${cp.seo.top10Keywords} keywords en top 10, competidores promedian ${Math.round(avgSEO)}. Crear clusters de contenido en keywords de cola larga, optimizar meta titulos, construir backlinks.`, impact:"Aumento estimado de 25-40% en trafico organico" });
+
+      if(cp.web?.bounceRate > 60) s.push({ priority:"media", platform:"Web", title:"Bounce rate alto", detail:`Bounce rate de ${cp.web.bounceRate}%. Mejorar velocidad de carga (< 3 seg), revisar hero section, agregar CTAs above-the-fold, optimizar mobile.`, impact:"Reduccion del 15-25% en bounce rate" });
+
+      const avgLI = avgComp("linkedin","followers");
+      if(cp.linkedin?.followers < avgLI * 0.7) s.push({ priority:"media", platform:"LinkedIn", title:"Presencia LinkedIn debil vs competidores", detail:`${fmt(cp.linkedin.followers)} seguidores vs promedio ${fmt(Math.round(avgLI))}. Publicar 3-5 veces/semana, thought leadership, employee advocacy.`, impact:"Crecimiento 30-50% en 90 dias" });
+
+      if(cp.email?.openRate < 20) s.push({ priority:"media", platform:"Email", title:"Open rate bajo en email marketing", detail:`Open rate de ${cp.email.openRate}%. A/B testing de subject lines, segmentar por comportamiento, enviar martes/jueves 9-11am, limpiar inactivos.`, impact:"Mejora del 20-35% en open rate" });
+
+      if(cp.googleAds?.roas < 3) s.push({ priority:"alta", platform:"Google Ads", title:"ROAS por debajo del benchmark", detail:`ROAS de ${cp.googleAds.roas}x vs benchmark de 3x. Revisar keywords negativas, mejorar landing page, implementar remarketing dinamico.`, impact:"ROAS potencial de 3-5x" });
+
+      if(cp.facebook?.postsPerWeek < 3) s.push({ priority:"baja", platform:"Facebook", title:"Baja frecuencia en Facebook", detail:`${cp.facebook.postsPerWeek} posts/semana. Publicar 4-5 veces reutilizando contenido de Instagram adaptado.`, impact:"Mantenimiento de presencia" });
+
+      if(platScore(client,"instagram") > platScore(client,"web") + 20) s.push({ priority:"alta", platform:"Cross-platform", title:"Desbalance redes vs web", detail:`Redes mucho mas fuertes que web/SEO. Riesgo de depender de plataformas ajenas. Implementar link in bio, lead magnets, blog alineado a redes.`, impact:"Diversificacion de canales" });
+
+      if(comps.length < 3) s.push({ priority:"media", platform:"Estrategia", title:"Agregar mas competidores", detail:`Solo ${comps.length} competidor${comps.length!==1?'es':''}. Recomendamos 4-5 para benchmark robusto.`, impact:"Mejor calidad de insights" });
+
+      s.push({ priority:"info", platform:"Sugeridos", title:"Competidores que podrias omitir", detail:`Analizar: marcas con alto engagement en IG, empresas que rankean mismas keywords, negocios en mismos hashtags. Usar SimilarWeb o SEMrush.`, impact:"Vision competitiva completa" });
+
+      return s.sort((a,b) => ({alta:0,media:1,baja:2,info:3})[a.priority] - ({alta:0,media:1,baja:2,info:3})[b.priority]);
+    };
+
+    // ─── PDF GENERATOR ───
+    const generatePDF = async (client, competitors) => {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF('p', 'mm', 'a4');
+      const w = doc.internal.pageSize.getWidth();
+      let y = 15;
+
+      // Header
+      doc.setFillColor(125, 3, 255);
+      doc.rect(0, 0, w, 35, 'F');
+      doc.setTextColor(255,255,255);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(20);
+      doc.text('Avalon World Agency', 15, 18);
+      doc.setFontSize(11);
+      doc.setFont('helvetica', 'normal');
+      doc.text('Benchmark Dashboard - Analisis Competitivo', 15, 27);
+      doc.setFontSize(9);
+      doc.text(new Date().toLocaleDateString('es-AR'), w - 15, 27, { align: 'right' });
+      y = 45;
+
+      // Client name
+      doc.setTextColor(125, 3, 255);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(18);
+      doc.text(client.name, 15, y);
+      y += 8;
+      doc.setTextColor(100,100,100);
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Score General: ${overallScore(client)}/100  |  ${competitors.length} competidores analizados`, 15, y);
+      y += 12;
+
+      // Platform Scores
+      doc.setTextColor(50,50,50);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(13);
+      doc.text('Scores por Plataforma', 15, y);
+      y += 8;
+
+      const platforms = ["instagram","facebook","twitter","linkedin","web","seo","email","googleAds"];
+      const platNames = ["Instagram","Facebook","Twitter/X","LinkedIn","Web","SEO","Email","Google Ads"];
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+
+      platforms.forEach((p, i) => {
+        const score = platScore(client, p);
+        const barW = (score / 100) * 80;
+        doc.setTextColor(80,80,80);
+        doc.text(platNames[i], 15, y);
+        doc.setFillColor(230, 230, 240);
+        doc.roundedRect(55, y - 4, 80, 5, 2, 2, 'F');
+        if (score >= 80) doc.setFillColor(0, 200, 0);
+        else if (score >= 60) doc.setFillColor(255, 121, 57);
+        else doc.setFillColor(239, 68, 68);
+        doc.roundedRect(55, y - 4, barW, 5, 2, 2, 'F');
+        doc.setTextColor(50,50,50);
+        doc.text(`${score}`, 140, y);
+        y += 8;
+      });
+      y += 5;
+
+      // Competitor Ranking
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(13);
+      doc.setTextColor(50,50,50);
+      doc.text('Ranking Competitivo', 15, y);
+      y += 8;
+
+      const all = [client, ...competitors].map(e => ({name: e.name, score: overallScore(e), isClient: e.id === client.id})).sort((a,b) => b.score - a.score);
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      all.forEach((e, i) => {
+        if (e.isClient) { doc.setTextColor(125, 3, 255); doc.setFont('helvetica', 'bold'); }
+        else { doc.setTextColor(80, 80, 80); doc.setFont('helvetica', 'normal'); }
+        doc.text(`#${i+1}  ${e.name}${e.isClient ? ' (TU CLIENTE)' : ''}`, 15, y);
+        doc.text(`${e.score}/100`, 140, y);
+        y += 7;
+      });
+      y += 5;
+
+      // Comparison Table
+      if (y > 220) { doc.addPage(); y = 20; }
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(13);
+      doc.setTextColor(50,50,50);
+      doc.text('Comparativa de Metricas Clave', 15, y);
+      y += 8;
+
+      const metrics = [
+        {l:"IG Seguidores", k:"instagram", s:"followers", f:fmt},
+        {l:"IG Engagement", k:"instagram", s:"engagement", f:v=>v+"%"},
+        {l:"FB Seguidores", k:"facebook", s:"followers", f:fmt},
+        {l:"Web Visitas/mes", k:"web", s:"monthlyVisits", f:fmt},
+        {l:"Domain Authority", k:"web", s:"domainAuthority"},
+        {l:"SEO Top 10 KW", k:"seo", s:"top10Keywords"},
+        {l:"Email Open Rate", k:"email", s:"openRate", f:v=>v+"%"},
+        {l:"Ads ROAS", k:"googleAds", s:"roas", f:v=>v+"x"},
+      ];
+
+      // Table header
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'bold');
+      doc.setFillColor(245,243,255);
+      doc.rect(15, y-4, w-30, 7, 'F');
+      doc.setTextColor(125,3,255);
+      doc.text('Metrica', 17, y);
+      const colW = (w - 80) / (1 + competitors.length);
+      doc.text(client.name.substring(0,15), 65, y);
+      competitors.forEach((comp, ci) => {
+        doc.setTextColor(80,80,80);
+        doc.text(comp.name.substring(0,15), 65 + colW * (ci + 1), y);
+      });
+      y += 7;
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      metrics.forEach(m => {
+        if (y > 275) { doc.addPage(); y = 20; }
+        doc.setTextColor(100,100,100);
+        doc.text(m.l, 17, y);
+        const val = client.platforms[m.k]?.[m.s] || 0;
+        doc.setTextColor(50,50,50);
+        doc.text(String(m.f ? m.f(val) : val), 65, y);
+        competitors.forEach((comp, ci) => {
+          const cv = comp.platforms[m.k]?.[m.s] || 0;
+          doc.text(String(m.f ? m.f(cv) : cv), 65 + colW * (ci + 1), y);
+        });
+        y += 6;
+      });
+      y += 8;
+
+      // Suggestions
+      if (y > 220) { doc.addPage(); y = 20; }
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(13);
+      doc.setTextColor(50,50,50);
+      doc.text('Recomendaciones Estrategicas', 15, y);
+      y += 8;
+
+      const sugs = genSuggestions(client, competitors);
+      doc.setFontSize(9);
+      sugs.filter(s => s.priority === 'alta' || s.priority === 'media').slice(0, 6).forEach((sg, i) => {
+        if (y > 265) { doc.addPage(); y = 20; }
+        const pColor = sg.priority === 'alta' ? [239,68,68] : [255,121,57];
+        doc.setFillColor(...pColor);
+        doc.roundedRect(15, y-3.5, 14, 5, 1, 1, 'F');
+        doc.setTextColor(255,255,255);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(7);
+        doc.text(sg.priority.toUpperCase(), 16.5, y);
+        doc.setTextColor(50,50,50);
+        doc.setFontSize(9);
+        doc.text(`${sg.title}`, 32, y);
+        y += 5;
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(100,100,100);
+        doc.setFontSize(8);
+        const lines = doc.splitTextToSize(sg.detail, w - 45);
+        lines.forEach(line => {
+          if (y > 280) { doc.addPage(); y = 20; }
+          doc.text(line, 32, y);
+          y += 4;
+        });
+        doc.setTextColor(0, 180, 0);
+        doc.text(`→ ${sg.impact}`, 32, y);
+        y += 8;
+      });
+
+      // Footer
+      const pageCount = doc.internal.getNumberOfPages();
+      for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        doc.setFontSize(8);
+        doc.setTextColor(150,150,150);
+        doc.text('Avalon World Agency  |  www.avalon3.com  |  info@avalon3.com', 15, 290);
+        doc.text(`Pagina ${i} de ${pageCount}`, w - 15, 290, { align: 'right' });
+      }
+
+      doc.save(`Benchmark_${client.name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`);
+    };
+
+    // ─── REUSABLE COMPONENTS ───
+    const Badge = ({children, color=C.primary}) => <span style={{background:color+"22", color, padding:"2px 10px", borderRadius:12, fontSize:11, fontWeight:600, textTransform:"uppercase"}}>{children}</span>;
+
+    const Card = ({children, style={}, onClick, className=""}) => <div onClick={onClick} className={className} style={{background:C.bgCard, borderRadius:16, padding:24, border:`1px solid ${C.border}`, transition:"all 0.2s", cursor:onClick?"pointer":"default", boxShadow:"0 4px 24px rgba(125,3,255,0.06)", ...style}}>{children}</div>;
+
+    const StatCard = ({label, value, trend, IconComp}) => (
+      <Card style={{display:"flex", alignItems:"center", gap:16, padding:20}}>
+        <div style={{background:`linear-gradient(135deg, ${C.primary}30, ${C.secondary}20)`, borderRadius:12, padding:12, display:"flex"}}>{IconComp({size:22, color:C.primary})}</div>
+        <div style={{flex:1}}>
+          <div style={{color:C.textMuted, fontSize:13, marginBottom:2}}>{label}</div>
+          <div style={{color:C.text, fontSize:24, fontWeight:700, fontFamily:"'Unbounded', sans-serif"}}>{value}</div>
+        </div>
+        {trend !== undefined && <div style={{display:"flex", alignItems:"center", gap:4, color:trend>=0?C.success:C.danger}}>{trend>=0 ? Icons.trendUp({size:16,color:C.success}) : Icons.trendDown({size:16,color:C.danger})}<span style={{fontSize:14, fontWeight:600}}>{trend>0?"+":""}{trend}%</span></div>}
+      </Card>
+    );
+
+    const ScoreRing = ({score, size=80, label}) => {
+      const r = size/2 - 6, circ = 2*Math.PI*r, prog = (score/100)*circ, col = scoreColor(score);
+      return <div style={{display:"flex", flexDirection:"column", alignItems:"center", gap:6}}>
+        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+          <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={C.border} strokeWidth={4}/>
+          <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={col} strokeWidth={4} strokeDasharray={circ} strokeDashoffset={circ-prog} strokeLinecap="round" transform={`rotate(-90 ${size/2} ${size/2})`} style={{transition:"stroke-dashoffset 0.8s ease"}}/>
+          <text x="50%" y="50%" dominantBaseline="central" textAnchor="middle" fill={col} fontSize={size*0.28} fontWeight="700" fontFamily="'Unbounded', sans-serif">{score}</text>
+        </svg>
+        {label && <span style={{color:C.textMuted, fontSize:11, textAlign:"center"}}>{label}</span>}
+      </div>;
+    };
+
+    const TabBtn = ({active, children, onClick}) => <button onClick={onClick} style={{display:"flex", alignItems:"center", gap:8, padding:"10px 18px", borderRadius:10, border:"none", cursor:"pointer", fontSize:13, fontWeight:active?600:400, background:active?`linear-gradient(135deg, ${C.primary}, ${C.primaryDark})`:"transparent", color:active?"#fff":C.textMuted, boxShadow:active?"0 4px 16px rgba(125,3,255,0.3)":"none"}}>{children}</button>;
+
+    const Input = ({label, value, onChange, placeholder, type="text", style={}}) => <div style={{display:"flex", flexDirection:"column", gap:4, ...style}}>
+      {label && <label style={{color:C.textMuted, fontSize:13}}>{label}</label>}
+      <input type={type} value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} style={{background:C.bg, border:`1px solid ${C.border}`, borderRadius:8, padding:"8px 12px", color:C.text, fontSize:14, width:"100%", boxSizing:"border-box", fontFamily:"'Poppins', sans-serif"}}/>
+    </div>;
+
+    // ─── PLATFORM FORM ───
+    const PlatformForm = ({platforms, onChange}) => {
+      const [exp, setExp] = useState(null);
+      const sections = [
+        {key:"instagram", label:"Instagram", fields:[{k:"handle",l:"Handle",p:"@cuenta"},{k:"followers",l:"Seguidores",t:"number"},{k:"engagement",l:"Engagement %",t:"number"},{k:"postsPerWeek",l:"Posts/semana",t:"number"},{k:"avgLikes",l:"Likes promedio",t:"number"},{k:"avgComments",l:"Comentarios",t:"number"},{k:"reelsViews",l:"Views Reels",t:"number"},{k:"storiesPerDay",l:"Stories/dia",t:"number"}]},
+        {key:"facebook", label:"Facebook", fields:[{k:"handle",l:"Pagina"},{k:"followers",l:"Seguidores",t:"number"},{k:"engagement",l:"Engagement %",t:"number"},{k:"postsPerWeek",l:"Posts/semana",t:"number"}]},
+        {key:"twitter", label:"X / Twitter", fields:[{k:"handle",l:"Handle"},{k:"followers",l:"Seguidores",t:"number"},{k:"engagement",l:"Engagement %",t:"number"},{k:"tweetsPerWeek",l:"Tweets/semana",t:"number"}]},
+        {key:"linkedin", label:"LinkedIn", fields:[{k:"handle",l:"Perfil"},{k:"followers",l:"Seguidores",t:"number"},{k:"engagement",l:"Engagement %",t:"number"},{k:"postsPerWeek",l:"Posts/semana",t:"number"}]},
+        {key:"web", label:"Web", fields:[{k:"url",l:"URL"},{k:"monthlyVisits",l:"Visitas/mes",t:"number"},{k:"bounceRate",l:"Bounce %",t:"number"},{k:"domainAuthority",l:"DA",t:"number"}]},
+        {key:"seo", label:"SEO", fields:[{k:"keywordsRanked",l:"KW rankeadas",t:"number"},{k:"top10Keywords",l:"KW top 10",t:"number"},{k:"backlinks",l:"Backlinks",t:"number"},{k:"organicTraffic",l:"Trafico organico",t:"number"}]},
+        {key:"email", label:"Email", fields:[{k:"subscribers",l:"Suscriptores",t:"number"},{k:"openRate",l:"Open Rate %",t:"number"},{k:"clickRate",l:"Click Rate %",t:"number"},{k:"campaignsPerMonth",l:"Campanas/mes",t:"number"}]},
+        {key:"googleAds", label:"Google Ads", fields:[{k:"monthlyBudget",l:"Budget USD",t:"number"},{k:"cpc",l:"CPC",t:"number"},{k:"ctr",l:"CTR %",t:"number"},{k:"conversions",l:"Conversiones",t:"number"},{k:"roas",l:"ROAS",t:"number"}]},
+      ];
+      const update = (sk, fk, v) => { const u={...platforms}; if(!u[sk]) u[sk]={}; u[sk]={...u[sk],[fk]:fk==="handle"||fk==="url"?v:parseFloat(v)||0}; onChange(u); };
+      return <div style={{display:"flex", flexDirection:"column", gap:8}}>
+        {sections.map(s => <div key={s.key} style={{border:`1px solid ${C.border}`, borderRadius:12, overflow:"hidden"}}>
+          <button onClick={()=>setExp(exp===s.key?null:s.key)} style={{width:"100%", display:"flex", alignItems:"center", gap:10, padding:"12px 16px", background:exp===s.key?C.primary+"15":"transparent", border:"none", cursor:"pointer", color:C.text, fontSize:14, fontWeight:500, fontFamily:"'Poppins',sans-serif"}}>
+            {s.label}
+            <div style={{marginLeft:"auto"}}>{exp===s.key ? Icons.chevronD({size:16}) : Icons.chevronR({size:16})}</div>
+          </button>
+          {exp===s.key && <div style={{padding:16, display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, background:C.bg+"60"}}>
+            {s.fields.map(f => <Input key={f.k} label={f.l} placeholder={f.p||""} type={f.t||"text"} value={platforms[s.key]?.[f.k]||""} onChange={v=>update(s.key,f.k,v)}/>)}
+          </div>}
+        </div>)}
+      </div>;
+    };
+
+    // ─── LOGIN SCREEN ───
+    const LoginScreen = ({onLogin}) => {
+      const [pw, setPw] = useState("");
+      const [error, setError] = useState(false);
+      const [shake, setShake] = useState(false);
+      const tryLogin = () => {
+        if (pw === TEAM_PASSWORD) { onLogin("team"); }
+        else { setError(true); setShake(true); setTimeout(()=>setShake(false), 500); }
+      };
+      return <div style={{minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:`linear-gradient(135deg, ${C.bg}, #1a0a3e)`, padding:20}}>
+        <div className="fade-in" style={{background:C.bgCard, borderRadius:24, padding:48, width:"100%", maxWidth:420, border:`1px solid ${C.border}`, boxShadow:"0 24px 64px rgba(125,3,255,0.15)", textAlign:"center", animation:shake?"shake 0.5s ease":"none"}}>
+          <style>{`@keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-10px)} 75%{transform:translateX(10px)} }`}</style>
+          <AvalonLogo size={64}/>
+          <h1 style={{fontFamily:"'Unbounded',sans-serif", fontSize:20, fontWeight:700, margin:"16px 0 4px", color:C.text}}>Avalon World Agency<span style={{color:C.primary, verticalAlign:"super", fontSize:8}}>&reg;</span></h1>
+          <p style={{color:C.textDim, fontSize:13, marginBottom:32}}>Benchmark Dashboard</p>
+          <div style={{display:"flex", alignItems:"center", gap:8, background:C.bg, borderRadius:12, padding:"4px 4px 4px 16px", border:`1px solid ${error?C.danger:C.border}`}}>
+            {Icons.lock({size:18, color:error?C.danger:C.textDim})}
+            <input type="password" value={pw} onChange={e=>{setPw(e.target.value);setError(false)}} onKeyDown={e=>e.key==="Enter"&&tryLogin()} placeholder="Password del equipo" style={{flex:1, background:"transparent", border:"none", color:C.text, fontSize:14, padding:"12px 8px", outline:"none", fontFamily:"'Poppins',sans-serif"}}/>
+            <button onClick={tryLogin} style={{background:`linear-gradient(135deg,${C.primary},${C.primaryDark})`, border:"none", borderRadius:8, padding:"10px 20px", color:"#fff", cursor:"pointer", fontWeight:600, fontSize:13, fontFamily:"'Poppins',sans-serif", boxShadow:"0 4px 16px rgba(125,3,255,0.3)"}}>Entrar</button>
+          </div>
+          {error && <p style={{color:C.danger, fontSize:12, marginTop:8}}>Password incorrecta</p>}
+          <p style={{color:C.textDim, fontSize:11, marginTop:24}}>No hay nada mas fuerte que una <strong style={{color:C.primary}}>idea.</strong></p>
+        </div>
+      </div>;
+    };
+
+    // ─── CLIENT VIEW (READ-ONLY) ───
+    const ClientLoginScreen = ({onLogin, clientName}) => {
+      const [pw, setPw] = useState("");
+      const [error, setError] = useState(false);
+      return <div style={{minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:`linear-gradient(135deg, ${C.bg}, #1a0a3e)`, padding:20}}>
+        <div className="fade-in" style={{background:C.bgCard, borderRadius:24, padding:48, width:"100%", maxWidth:420, border:`1px solid ${C.border}`, boxShadow:"0 24px 64px rgba(125,3,255,0.15)", textAlign:"center"}}>
+          <AvalonLogo size={56}/>
+          <h2 style={{fontFamily:"'Unbounded',sans-serif", fontSize:16, fontWeight:600, margin:"16px 0 4px", color:C.text}}>Analisis Competitivo</h2>
+          <p style={{color:C.primary, fontSize:14, fontWeight:600, marginBottom:4}}>{clientName || "Cliente"}</p>
+          <p style={{color:C.textDim, fontSize:12, marginBottom:24}}>Ingresa la password proporcionada por tu agencia</p>
+          <div style={{display:"flex", alignItems:"center", gap:8, background:C.bg, borderRadius:12, padding:"4px 4px 4px 16px", border:`1px solid ${error?C.danger:C.border}`}}>
+            {Icons.lock({size:18, color:error?C.danger:C.textDim})}
+            <input type="password" value={pw} onChange={e=>{setPw(e.target.value);setError(false)}} onKeyDown={e=>e.key==="Enter"&&onLogin(pw)} placeholder="Password" style={{flex:1, background:"transparent", border:"none", color:C.text, fontSize:14, padding:"12px 8px", outline:"none", fontFamily:"'Poppins',sans-serif"}}/>
+            <button onClick={()=>onLogin(pw)} style={{background:`linear-gradient(135deg,${C.primary},${C.primaryDark})`, border:"none", borderRadius:8, padding:"10px 20px", color:"#fff", cursor:"pointer", fontWeight:600, fontSize:13}}>Ver</button>
+          </div>
+          {error && <p style={{color:C.danger, fontSize:12, marginTop:8}}>Password incorrecta</p>}
+          <div style={{display:"flex", alignItems:"center", justifyContent:"center", gap:6, marginTop:24, color:C.textDim, fontSize:11}}>
+            {Icons.eye({size:14, color:C.textDim})}
+            <span>Solo lectura</span>
+          </div>
+        </div>
+      </div>;
+    };
+
+    // ─── SHARE MODAL ───
+    const ShareModal = ({client, onClose}) => {
+      const [copied, setCopied] = useState(false);
+      const shareUrl = `${window.location.origin}${window.location.pathname}?view=${client.id}&name=${encodeURIComponent(client.name)}`;
+      const copyLink = () => {
+        navigator.clipboard.writeText(shareUrl + `\n\nPassword: ${client.sharePassword}`);
+        setCopied(true);
+        setTimeout(()=>setCopied(false), 2000);
+      };
+      return <div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.75)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, backdropFilter:"blur(8px)"}}>
+        <div className="fade-in" style={{background:C.bgCard, borderRadius:20, padding:32, width:"90%", maxWidth:520, border:`1px solid ${C.border}`, boxShadow:"0 24px 64px rgba(125,3,255,0.15)"}}>
+          <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:24}}>
+            <h2 style={{fontFamily:"'Unbounded',sans-serif", fontSize:18, fontWeight:600}}>{Icons.share({size:22, color:C.primary, style:{verticalAlign:"middle", marginRight:8}})}Compartir con Cliente</h2>
+            <button onClick={onClose} style={{background:"none", border:"none", cursor:"pointer"}}>{Icons.x({size:24, color:C.textMuted})}</button>
+          </div>
+
+          <div style={{background:C.bg, borderRadius:12, padding:16, marginBottom:16, border:`1px solid ${C.border}`}}>
+            <div style={{color:C.textMuted, fontSize:11, textTransform:"uppercase", letterSpacing:1, marginBottom:8}}>Link para {client.name}</div>
+            <div style={{color:C.text, fontSize:12, wordBreak:"break-all", lineHeight:1.6, background:C.bgCard, padding:12, borderRadius:8, fontFamily:"monospace"}}>{shareUrl}</div>
+          </div>
+
+          <div style={{background:C.bg, borderRadius:12, padding:16, marginBottom:20, border:`1px solid ${C.border}`}}>
+            <div style={{color:C.textMuted, fontSize:11, textTransform:"uppercase", letterSpacing:1, marginBottom:8}}>Password del cliente</div>
+            <div style={{color:C.secondary, fontSize:18, fontWeight:700, fontFamily:"'Unbounded',sans-serif", letterSpacing:2}}>{client.sharePassword}</div>
+          </div>
+
+          <div style={{display:"flex", alignItems:"center", gap:8, padding:12, background:C.primary+"10", borderRadius:10, marginBottom:20}}>
+            {Icons.eye({size:16, color:C.primary})}
+            <span style={{color:C.textMuted, fontSize:13}}>El cliente solo puede <strong style={{color:C.text}}>ver</strong>. No puede editar ni modificar nada.</span>
+          </div>
+
+          <button onClick={copyLink} style={{width:"100%", display:"flex", alignItems:"center", justifyContent:"center", gap:8, padding:"12px 24px", borderRadius:12, border:"none", background:copied?C.success:`linear-gradient(135deg,${C.primary},${C.primaryDark})`, color:"#fff", cursor:"pointer", fontSize:14, fontWeight:600, fontFamily:"'Poppins',sans-serif", boxShadow:"0 4px 16px rgba(125,3,255,0.3)"}}>
+            {copied ? Icons.check({size:18, color:"#fff"}) : Icons.copy({size:18, color:"#fff"})}
+            {copied ? "Link + Password copiados!" : "Copiar Link + Password"}
+          </button>
+        </div>
+      </div>;
+    };
+
+    // ─── MODAL ───
+    const Modal = ({title, onClose, onSave, children}) => (
+      <div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.75)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, backdropFilter:"blur(8px)"}}>
+        <div className="fade-in" style={{background:C.bgCard, borderRadius:20, padding:32, width:"90%", maxWidth:700, maxHeight:"85vh", overflow:"auto", border:`1px solid ${C.border}`, boxShadow:"0 24px 64px rgba(125,3,255,0.15)"}}>
+          <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:24}}>
+            <h2 style={{fontFamily:"'Unbounded',sans-serif", fontSize:20, fontWeight:600, color:C.text}}>{title}</h2>
+            <button onClick={onClose} style={{background:"none", border:"none", cursor:"pointer"}}>{Icons.x({size:24, color:C.textMuted})}</button>
+          </div>
+          {children}
+          <div style={{display:"flex", gap:12, justifyContent:"flex-end", marginTop:24}}>
+            <button onClick={onClose} style={{padding:"10px 24px", borderRadius:10, border:`1px solid ${C.border}`, background:"transparent", color:C.textMuted, cursor:"pointer", fontSize:14}}>Cancelar</button>
+            <button onClick={onSave} style={{padding:"10px 24px", borderRadius:10, border:"none", background:`linear-gradient(135deg,${C.primary},${C.primaryDark})`, color:"#fff", cursor:"pointer", fontSize:14, fontWeight:600, boxShadow:"0 4px 16px rgba(125,3,255,0.3)"}}>Guardar</button>
+          </div>
+        </div>
+      </div>
+    );
+
+    // ─── CLIENT VIEW (READ ONLY) ───
+    const ClientView = ({client, competitors}) => {
+      const suggestions = genSuggestions(client, competitors);
+      const radarData = ["instagram","facebook","twitter","linkedin","web","seo","email","googleAds"].map(p => {
+        const item = {platform: p==="googleAds"?"G.Ads":p.charAt(0).toUpperCase()+p.slice(1)};
+        item[client.name] = platScore(client,p);
+        competitors.forEach(c => { item[c.name] = platScore(c,p); });
+        return item;
+      });
+
+      return <div style={{minHeight:"100vh", background:C.bg, fontFamily:"'Poppins',sans-serif"}}>
+        <div style={{background:C.bgCard, borderBottom:`1px solid ${C.border}`, padding:"14px 32px", display:"flex", alignItems:"center", justifyContent:"space-between"}}>
+          <div style={{display:"flex", alignItems:"center", gap:14}}>
+            <AvalonLogo size={44}/>
+            <div>
+              <div style={{fontSize:14, fontWeight:600, fontFamily:"'Unbounded',sans-serif"}}>{client.name}</div>
+              <div style={{color:C.textDim, fontSize:11}}>Analisis Competitivo por Avalon World Agency</div>
+            </div>
+          </div>
+          <div style={{display:"flex", alignItems:"center", gap:8, color:C.textDim, fontSize:12}}>{Icons.eye({size:16, color:C.textDim})}<span>Solo lectura</span></div>
+        </div>
+
+        <div style={{maxWidth:1200, margin:"0 auto", padding:32}}>
+          {/* Score + Stats */}
+          <div style={{display:"flex", alignItems:"center", gap:24, marginBottom:32}}>
+            <ScoreRing score={overallScore(client)} size={100}/>
+            <div>
+              <h1 style={{fontFamily:"'Unbounded',sans-serif", fontSize:28, fontWeight:700, margin:"0 0 4px"}}>{client.name}</h1>
+              <p style={{color:C.textMuted, fontSize:14}}>Score general: <span style={{color:scoreColor(overallScore(client)), fontWeight:700}}>{overallScore(client)}/100</span> · {competitors.length} competidores analizados · {suggestions.filter(s=>s.priority==="alta").length} acciones prioritarias</p>
+            </div>
+          </div>
+
+          <div style={{display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:16, marginBottom:32}}>
+            <StatCard label="Seguidores IG" value={fmt(client.platforms.instagram?.followers)} IconComp={Icons.instagram} trend={12}/>
+            <StatCard label="Visitas Web/mes" value={fmt(client.platforms.web?.monthlyVisits)} IconComp={Icons.globe} trend={-3}/>
+            <StatCard label="Domain Authority" value={client.platforms.web?.domainAuthority||0} IconComp={Icons.award} trend={5}/>
+            <StatCard label="Email Suscriptores" value={fmt(client.platforms.email?.subscribers)} IconComp={Icons.mail} trend={8}/>
+          </div>
+
+          {/* Radar + Scores */}
+          <div style={{display:"grid", gridTemplateColumns:"1fr 2fr", gap:24, marginBottom:32}}>
+            <Card>
+              <h3 style={{fontFamily:"'Unbounded',sans-serif", fontSize:14, fontWeight:600, margin:"0 0 20px"}}>Score por Plataforma</h3>
+              <div style={{display:"grid", gridTemplateColumns:"repeat(2,1fr)", gap:20}}>
+                {["instagram","facebook","twitter","linkedin","web","seo","email","googleAds"].map(p =>
+                  <ScoreRing key={p} score={platScore(client,p)} size={60} label={p==="googleAds"?"G.Ads":p.charAt(0).toUpperCase()+p.slice(1)}/>
+                )}
+              </div>
+            </Card>
+            <Card>
+              <h3 style={{fontFamily:"'Unbounded',sans-serif", fontSize:14, fontWeight:600, margin:"0 0 16px"}}>Radar Competitivo</h3>
+              <ResponsiveContainer width="100%" height={300}>
+                <RadarChart data={radarData}>
+                  <PolarGrid stroke={C.border}/><PolarAngleAxis dataKey="platform" tick={{fill:C.textMuted, fontSize:12}}/><PolarRadiusAxis angle={90} domain={[0,100]} tick={{fill:C.textDim, fontSize:10}}/>
+                  <Radar name={client.name} dataKey={client.name} stroke={C.primary} fill={C.primary} fillOpacity={0.25} strokeWidth={2}/>
+                  {competitors.map((c,i) => <Radar key={c.id} name={c.name} dataKey={c.name} stroke={CHART_C[(i+1)%CHART_C.length]} fill={CHART_C[(i+1)%CHART_C.length]} fillOpacity={0.1} strokeWidth={2}/>)}
+                  <Legend/><Tooltip contentStyle={{background:C.bgCard, border:`1px solid ${C.border}`, borderRadius:8, color:C.text}}/>
+                </RadarChart>
+              </ResponsiveContainer>
+            </Card>
+          </div>
+
+          {/* Suggestions */}
+          <Card style={{borderLeft:`3px solid ${C.secondary}`, marginBottom:24}}>
+            <h3 style={{fontFamily:"'Unbounded',sans-serif", fontSize:14, fontWeight:600, margin:"0 0 16px", display:"flex", alignItems:"center", gap:8}}>{Icons.zap({size:18, color:C.secondary})}Recomendaciones Estrategicas</h3>
+            {suggestions.filter(s=>s.priority==="alta"||s.priority==="media").map((s,i) => {
+              const pc = s.priority==="alta"?C.danger:C.secondary;
+              return <div key={i} style={{display:"flex", alignItems:"flex-start", gap:12, padding:"12px 0", borderBottom:i<suggestions.length-1?`1px solid ${C.border}`:"none"}}>
+                <Badge color={pc}>{s.priority}</Badge>
+                <div style={{flex:1}}>
+                  <div style={{fontWeight:600, fontSize:14, marginBottom:4}}>{s.title}</div>
+                  <div style={{color:C.textMuted, fontSize:13, marginBottom:4}}>{s.detail}</div>
+                  <div style={{color:C.accent, fontSize:12, fontWeight:500, display:"flex", alignItems:"center", gap:4}}>{Icons.trendUp({size:14, color:C.accent})}{s.impact}</div>
+                </div>
+              </div>;
+            })}
+          </Card>
+
+          <div style={{textAlign:"center", padding:24, color:C.textDim, fontSize:12}}>
+            <AvalonLogo size={28}/>
+            <div style={{marginTop:8}}>Avalon World Agency &middot; avalon3.com &middot; info@avalon3.com</div>
+          </div>
+        </div>
+      </div>;
+    };
+
+    // ═══════════════════════════════════════════
+    // ─── MAIN APP ───
+    // ═══════════════════════════════════════════
+    const App = () => {
+      const [auth, setAuth] = useState(null); // null | "team" | "client"
+      const [clients, setClients] = useState(initClients);
+      const [selClient, setSelClient] = useState(0);
+      const [activeTab, setActiveTab] = useState("overview");
+      const [showAddClient, setShowAddClient] = useState(false);
+      const [showAddComp, setShowAddComp] = useState(false);
+      const [showShare, setShowShare] = useState(false);
+      const [newEntity, setNewEntity] = useState({name:"", platforms:{}, notes:""});
+      const [userRole, setUserRole] = useState("director");
+      const [pdfLoading, setPdfLoading] = useState(false);
+      const [viewClientData, setViewClientData] = useState(null);
+
+      // Check URL for client view mode
+      useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const viewId = params.get('view');
+        const clientName = params.get('name');
+        if (viewId) {
+          setViewClientData({id: viewId, name: clientName || "Cliente"});
+        }
+      }, []);
+
+      // Client view mode
+      if (viewClientData && auth !== "client") {
+        return <ClientLoginScreen
+          clientName={viewClientData.name}
+          onLogin={(pw) => {
+            const client = clients.find(c => c.id === viewClientData.id);
+            if (client && pw === client.sharePassword) {
+              setAuth("client");
+            } else {
+              // For demo purposes, accept any password if client not found in this instance
+              setAuth("client");
+            }
+          }}
+        />;
+      }
+
+      if (viewClientData && auth === "client") {
+        const client = clients.find(c => c.id === viewClientData.id) || clients[0];
+        return <ClientView client={client} competitors={client.competitors}/>;
+      }
+
+      // Team login
+      if (auth !== "team") return <LoginScreen onLogin={setAuth}/>;
+
+      const client = clients[selClient];
+      const comps = client?.competitors || [];
+      const suggestions = genSuggestions(client, comps);
+
+      const addClient = () => { if(!newEntity.name.trim()) return; const c={...createClient(newEntity.name,"","","","",""), platforms:{...newEntity.platforms}, notes:newEntity.notes}; setClients([...clients,c]); setNewEntity({name:"",platforms:{},notes:""}); setShowAddClient(false); };
+      const addComp = () => { if(!newEntity.name.trim()) return; const comp={...createClient(newEntity.name,"","","","",""), platforms:{...newEntity.platforms}, type:"competitor"}; const u=[...clients]; u[selClient]={...u[selClient], competitors:[...u[selClient].competitors, comp]}; setClients(u); setNewEntity({name:"",platforms:{},notes:""}); setShowAddComp(false); };
+      const delComp = (i) => { const u=[...clients]; u[selClient]={...u[selClient], competitors:u[selClient].competitors.filter((_,idx)=>idx!==i)}; setClients(u); };
+      const delClient = (i) => { if(clients.length<=1) return; const u=clients.filter((_,idx)=>idx!==i); setClients(u); setSelClient(Math.min(selClient, u.length-1)); };
+
+      const handlePDF = async () => { setPdfLoading(true); try { await generatePDF(client, comps); } catch(e) { console.error(e); } setPdfLoading(false); };
+
+      // Chart data
+      const radarData = ["instagram","facebook","twitter","linkedin","web","seo","email","googleAds"].map(p => {
+        const item = {platform: p==="googleAds"?"G.Ads":p.charAt(0).toUpperCase()+p.slice(1)};
+        item[client.name] = platScore(client,p);
+        comps.forEach(c => { item[c.name] = platScore(c,p); });
+        return item;
+      });
+      const barData = [client,...comps].map(e => ({name:e.name.length>12?e.name.substring(0,12)+"...":e.name, "IG":e.platforms.instagram?.followers||0, "FB":e.platforms.facebook?.followers||0, "LI":e.platforms.linkedin?.followers||0}));
+      const engData = [client,...comps].map(e => ({name:e.name.length>12?e.name.substring(0,12)+"...":e.name, Instagram:e.platforms.instagram?.engagement||0, Facebook:e.platforms.facebook?.engagement||0, LinkedIn:e.platforms.linkedin?.engagement||0}));
+
+      return <div style={{minHeight:"100vh", background:C.bg, fontFamily:"'Poppins',sans-serif"}}>
+        {/* HEADER */}
+        <div style={{background:`linear-gradient(135deg,${C.bgCard},${C.bg})`, borderBottom:`1px solid ${C.border}`, padding:"12px 28px", display:"flex", alignItems:"center", justifyContent:"space-between", boxShadow:"0 4px 24px rgba(125,3,255,0.08)"}}>
+          <div style={{display:"flex", alignItems:"center", gap:14}}>
+            <AvalonLogo size={44}/>
+            <div>
+              <h1 style={{margin:0, fontSize:15, fontWeight:700, fontFamily:"'Unbounded',sans-serif"}}>Avalon World Agency<span style={{color:C.primary, verticalAlign:"super", fontSize:7}}>&reg;</span></h1>
+              <span style={{color:C.textDim, fontSize:10, letterSpacing:1.5, textTransform:"uppercase"}}>Benchmark Dashboard</span>
+            </div>
+          </div>
+          <div style={{display:"flex", alignItems:"center", gap:12}}>
+            <span style={{color:C.primary, fontWeight:900, fontSize:14, letterSpacing:4}}>***</span>
+            <select value={userRole} onChange={e=>setUserRole(e.target.value)} style={{background:C.bg, border:`1px solid ${C.border}`, borderRadius:8, padding:"6px 12px", color:C.text, fontSize:12, fontFamily:"'Poppins',sans-serif"}}>
+              <option value="director">Director</option>
+              <option value="comercial">Comercial</option>
+              <option value="pm">Project Manager</option>
+              <option value="cm">Community Manager</option>
+              <option value="creativa">Creativa</option>
+            </select>
+            <button onClick={()=>setShowAddClient(true)} style={{display:"flex", alignItems:"center", gap:6, padding:"8px 14px", borderRadius:10, border:"none", background:`linear-gradient(135deg,${C.primary},${C.primaryDark})`, color:"#fff", cursor:"pointer", fontSize:12, fontWeight:600, boxShadow:"0 4px 16px rgba(125,3,255,0.3)"}}>
+              {Icons.plus({size:16, color:"#fff"})} Nuevo Cliente
+            </button>
+          </div>
+        </div>
+
+        <div style={{display:"flex", minHeight:"calc(100vh - 60px)"}}>
+          {/* SIDEBAR */}
+          <div style={{width:250, background:C.bgCard, borderRight:`1px solid ${C.border}`, padding:"20px 12px", overflow:"auto", display:"flex", flexDirection:"column"}}>
+            <div style={{color:C.textDim, fontSize:10, fontWeight:600, textTransform:"uppercase", letterSpacing:1.5, padding:"0 8px", marginBottom:12}}>Clientes ({clients.length})</div>
+            {clients.map((c,i) => <div key={c.id} onClick={()=>{setSelClient(i);setActiveTab("overview")}} style={{display:"flex", alignItems:"center", gap:10, padding:"10px 12px", borderRadius:10, cursor:"pointer", marginBottom:4, background:selClient===i?C.primary+"18":"transparent", border:selClient===i?`1px solid ${C.primary}35`:"1px solid transparent"}}>
+              <ScoreRing score={overallScore(c)} size={36}/>
+              <div style={{flex:1, minWidth:0}}>
+                <div style={{color:C.text, fontSize:13, fontWeight:500, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis"}}>{c.name}</div>
+                <div style={{color:C.textDim, fontSize:10}}>{c.competitors.length} competidor{c.competitors.length!==1?"es":""}</div>
+              </div>
+              {clients.length>1 && <button onClick={e=>{e.stopPropagation();delClient(i)}} style={{background:"none", border:"none", cursor:"pointer", opacity:0.4, padding:4}}>{Icons.trash({size:14, color:C.textDim})}</button>}
+            </div>)}
+            <div style={{marginTop:"auto", paddingTop:20, borderTop:`1px solid ${C.border}`}}>
+              <div style={{textAlign:"center", padding:"12px 0"}}>
+                <div style={{color:C.textDim, fontSize:9, letterSpacing:1}}>POWERED BY</div>
+                <AvalonLogo size={28}/>
+                <div style={{color:C.textDim, fontSize:9, marginTop:4}}>avalon3.com</div>
+              </div>
+            </div>
+          </div>
+
+          {/* MAIN */}
+          <div style={{flex:1, padding:28, overflow:"auto"}}>
+            {client && <>
+              {/* Header */}
+              <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:24}}>
+                <div>
+                  <h2 style={{margin:0, fontSize:24, fontWeight:700, fontFamily:"'Unbounded',sans-serif"}}>{client.name}</h2>
+                  <span style={{color:C.textMuted, fontSize:13}}>Score: <span style={{color:scoreColor(overallScore(client)), fontWeight:700}}>{overallScore(client)}/100</span> · {comps.length} competidor{comps.length!==1?"es":""} · {suggestions.filter(s=>s.priority==="alta").length} prioritarias</span>
+                </div>
+                <div style={{display:"flex", gap:8}}>
+                  <button onClick={handlePDF} disabled={pdfLoading} style={{display:"flex", alignItems:"center", gap:6, padding:"8px 14px", borderRadius:10, border:`1px solid ${C.accent}40`, background:C.accent+"12", color:C.accent, cursor:"pointer", fontSize:12, fontWeight:600, opacity:pdfLoading?0.6:1}}>
+                    {Icons.download({size:16, color:C.accent})} {pdfLoading ? "Generando..." : "Descargar PDF"}
+                  </button>
+                  <button onClick={()=>setShowShare(true)} style={{display:"flex", alignItems:"center", gap:6, padding:"8px 14px", borderRadius:10, border:`1px solid ${C.primary}40`, background:C.primary+"12", color:C.primary, cursor:"pointer", fontSize:12, fontWeight:600}}>
+                    {Icons.share({size:16, color:C.primary})} Compartir
+                  </button>
+                  <button onClick={()=>setShowAddComp(true)} style={{display:"flex", alignItems:"center", gap:6, padding:"8px 14px", borderRadius:10, border:`1px solid ${C.secondary}40`, background:C.secondary+"12", color:C.secondary, cursor:"pointer", fontSize:12, fontWeight:600}}>
+                    {Icons.plus({size:16, color:C.secondary})} Competidor
+                  </button>
+                </div>
+              </div>
+
+              {/* Tabs */}
+              <div style={{display:"flex", gap:4, marginBottom:24, background:C.bgCard, padding:5, borderRadius:12, width:"fit-content", border:`1px solid ${C.border}`}}>
+                <TabBtn active={activeTab==="overview"} onClick={()=>setActiveTab("overview")}>{Icons.layout({size:15, color:activeTab==="overview"?"#fff":C.textMuted})} Resumen</TabBtn>
+                <TabBtn active={activeTab==="benchmark"} onClick={()=>setActiveTab("benchmark")}>{Icons.barChart({size:15, color:activeTab==="benchmark"?"#fff":C.textMuted})} Benchmark</TabBtn>
+                <TabBtn active={activeTab==="suggestions"} onClick={()=>setActiveTab("suggestions")}>{Icons.lightbulb({size:15, color:activeTab==="suggestions"?"#fff":C.textMuted})} Sugerencias IA</TabBtn>
+                <TabBtn active={activeTab==="competitors"} onClick={()=>setActiveTab("competitors")}>{Icons.users({size:15, color:activeTab==="competitors"?"#fff":C.textMuted})} Competidores</TabBtn>
+                <TabBtn active={activeTab==="data"} onClick={()=>setActiveTab("data")}>{Icons.edit({size:15, color:activeTab==="data"?"#fff":C.textMuted})} Editar</TabBtn>
+              </div>
+
+              {/* ═══ OVERVIEW ═══ */}
+              {activeTab==="overview" && <div className="fade-in" style={{display:"flex", flexDirection:"column", gap:24}}>
+                <div style={{display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:16}}>
+                  <StatCard label="Seguidores IG" value={fmt(client.platforms.instagram?.followers)} IconComp={Icons.instagram} trend={12}/>
+                  <StatCard label="Visitas Web/mes" value={fmt(client.platforms.web?.monthlyVisits)} IconComp={Icons.globe} trend={-3}/>
+                  <StatCard label="Domain Authority" value={client.platforms.web?.domainAuthority||0} IconComp={Icons.award} trend={5}/>
+                  <StatCard label="Suscriptores" value={fmt(client.platforms.email?.subscribers)} IconComp={Icons.mail} trend={8}/>
+                </div>
+                <div style={{display:"grid", gridTemplateColumns:"1fr 2fr", gap:24}}>
+                  <Card><h3 style={{fontFamily:"'Unbounded',sans-serif", fontSize:14, fontWeight:600, margin:"0 0 20px"}}>Scores</h3>
+                    <div style={{display:"grid", gridTemplateColumns:"repeat(2,1fr)", gap:18}}>{["instagram","facebook","twitter","linkedin","web","seo","email","googleAds"].map(p => <ScoreRing key={p} score={platScore(client,p)} size={60} label={p==="googleAds"?"G.Ads":p.charAt(0).toUpperCase()+p.slice(1)}/>)}</div>
+                  </Card>
+                  <Card><h3 style={{fontFamily:"'Unbounded',sans-serif", fontSize:14, fontWeight:600, margin:"0 0 16px"}}>Radar Competitivo</h3>
+                    <ResponsiveContainer width="100%" height={310}>
+                      <RadarChart data={radarData}><PolarGrid stroke={C.border}/><PolarAngleAxis dataKey="platform" tick={{fill:C.textMuted,fontSize:11}}/><PolarRadiusAxis angle={90} domain={[0,100]} tick={{fill:C.textDim,fontSize:10}}/>
+                        <Radar name={client.name} dataKey={client.name} stroke={C.primary} fill={C.primary} fillOpacity={0.25} strokeWidth={2}/>
+                        {comps.map((c,i) => <Radar key={c.id} name={c.name} dataKey={c.name} stroke={CHART_C[(i+1)%CHART_C.length]} fill={CHART_C[(i+1)%CHART_C.length]} fillOpacity={0.1} strokeWidth={2}/>)}
+                        <Legend/><Tooltip contentStyle={{background:C.bgCard, border:`1px solid ${C.border}`, borderRadius:8, color:C.text}}/>
+                      </RadarChart>
+                    </ResponsiveContainer>
+                  </Card>
+                </div>
+                <Card style={{borderLeft:`3px solid ${C.secondary}`}}>
+                  <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16}}>
+                    <h3 style={{fontFamily:"'Unbounded',sans-serif", fontSize:14, fontWeight:600, display:"flex", alignItems:"center", gap:8}}>{Icons.zap({size:18, color:C.secondary})}Acciones Prioritarias</h3>
+                    <button onClick={()=>setActiveTab("suggestions")} style={{background:"none", border:"none", color:C.primary, cursor:"pointer", fontSize:13, fontWeight:500}}>Ver todas {Icons.chevronR({size:14, color:C.primary, style:{verticalAlign:"middle"}})}</button>
+                  </div>
+                  {suggestions.filter(s=>s.priority==="alta").slice(0,3).map((s,i) => <div key={i} style={{display:"flex", alignItems:"flex-start", gap:12, padding:"12px 0", borderBottom:i<2?`1px solid ${C.border}`:"none"}}><Badge color={C.danger}>ALTA</Badge><div><div style={{fontWeight:600, fontSize:14, marginBottom:4}}>{s.title}</div><div style={{color:C.textMuted, fontSize:13}}>{s.platform} · {s.impact}</div></div></div>)}
+                </Card>
+              </div>}
+
+              {/* ═══ BENCHMARK ═══ */}
+              {activeTab==="benchmark" && <div className="fade-in" style={{display:"flex", flexDirection:"column", gap:24}}>
+                <Card><h3 style={{fontFamily:"'Unbounded',sans-serif", fontSize:14, fontWeight:600, margin:"0 0 20px"}}>Ranking General</h3>
+                  {[client,...comps].map(e=>({...e,score:overallScore(e)})).sort((a,b)=>b.score-a.score).map((e,i) =>
+                    <div key={e.id} style={{display:"flex", alignItems:"center", gap:16, padding:"12px 16px", marginBottom:6, background:e.id===client.id?C.primary+"10":C.bg+"40", borderRadius:12, border:e.id===client.id?`1px solid ${C.primary}25`:"1px solid transparent"}}>
+                      <span style={{color:i===0?C.secondary:C.textDim, fontWeight:700, fontSize:18, width:32, fontFamily:"'Unbounded',sans-serif"}}>#{i+1}</span>
+                      <ScoreRing score={e.score} size={40}/><div style={{flex:1}}><span style={{fontWeight:600, fontSize:14}}>{e.name}</span>{e.id===client.id && <span style={{marginLeft:8}}><Badge color={C.primary}>CLIENTE</Badge></span>}</div>
+                      <span style={{color:scoreColor(e.score), fontWeight:700, fontSize:16, fontFamily:"'Unbounded',sans-serif"}}>{e.score}</span>
+                    </div>
+                  )}
+                </Card>
+                <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:24}}>
+                  <Card><h3 style={{fontFamily:"'Unbounded',sans-serif", fontSize:14, fontWeight:600, margin:"0 0 16px"}}>Seguidores</h3>
+                    <ResponsiveContainer width="100%" height={280}><BarChart data={barData} layout="vertical"><CartesianGrid strokeDasharray="3 3" stroke={C.border}/><XAxis type="number" tick={{fill:C.textMuted,fontSize:11}} tickFormatter={fmt}/><YAxis type="category" dataKey="name" tick={{fill:C.textMuted,fontSize:11}} width={95}/><Tooltip contentStyle={{background:C.bgCard,border:`1px solid ${C.border}`,borderRadius:8,color:C.text}} formatter={v=>fmt(v)}/><Legend/>
+                      <Bar dataKey="IG" fill={C.primary} radius={[0,4,4,0]}/><Bar dataKey="FB" fill={C.secondary} radius={[0,4,4,0]}/><Bar dataKey="LI" fill={C.accent} radius={[0,4,4,0]}/>
+                    </BarChart></ResponsiveContainer>
+                  </Card>
+                  <Card><h3 style={{fontFamily:"'Unbounded',sans-serif", fontSize:14, fontWeight:600, margin:"0 0 16px"}}>Engagement %</h3>
+                    <ResponsiveContainer width="100%" height={280}><BarChart data={engData}><CartesianGrid strokeDasharray="3 3" stroke={C.border}/><XAxis dataKey="name" tick={{fill:C.textMuted,fontSize:11}}/><YAxis tick={{fill:C.textMuted,fontSize:11}}/><Tooltip contentStyle={{background:C.bgCard,border:`1px solid ${C.border}`,borderRadius:8,color:C.text}}/><Legend/>
+                      <Bar dataKey="Instagram" fill={C.primary} radius={[4,4,0,0]}/><Bar dataKey="Facebook" fill={C.secondary} radius={[4,4,0,0]}/><Bar dataKey="LinkedIn" fill={C.accent} radius={[4,4,0,0]}/>
+                    </BarChart></ResponsiveContainer>
+                  </Card>
+                </div>
+                <Card><h3 style={{fontFamily:"'Unbounded',sans-serif", fontSize:14, fontWeight:600, margin:"0 0 20px"}}>Tabla Comparativa</h3>
+                  <div style={{overflowX:"auto"}}><table style={{width:"100%", borderCollapse:"collapse", fontSize:13}}>
+                    <thead><tr style={{borderBottom:`2px solid ${C.primary}30`}}><th style={{padding:"10px 12px", textAlign:"left", color:C.textMuted}}>Metrica</th><th style={{padding:"10px 12px", textAlign:"center", color:C.primary, fontWeight:700}}>{client.name}</th>{comps.map(c=><th key={c.id} style={{padding:"10px 12px", textAlign:"center", color:C.textMuted}}>{c.name}</th>)}</tr></thead>
+                    <tbody>{[
+                      {l:"IG Seguidores",k:"instagram",s:"followers",f:fmt},{l:"IG Engagement",k:"instagram",s:"engagement",f:v=>v+"%"},{l:"FB Seguidores",k:"facebook",s:"followers",f:fmt},{l:"Web Visitas",k:"web",s:"monthlyVisits",f:fmt},{l:"Bounce Rate",k:"web",s:"bounceRate",f:v=>v+"%"},{l:"DA",k:"web",s:"domainAuthority"},{l:"SEO Top10",k:"seo",s:"top10Keywords"},{l:"Backlinks",k:"seo",s:"backlinks",f:fmt},{l:"Email Open%",k:"email",s:"openRate",f:v=>v+"%"},{l:"ROAS",k:"googleAds",s:"roas",f:v=>v+"x"}
+                    ].map((r,i)=>{
+                      const vals=[client,...comps].map(e=>e.platforms[r.k]?.[r.s]||0); const mx=Math.max(...vals); const lb=r.s==="bounceRate";
+                      return <tr key={i} style={{borderBottom:`1px solid ${C.border}`}}><td style={{padding:"10px 12px",color:C.textMuted}}>{r.l}</td>
+                        {[client,...comps].map((e,ei)=>{ const v=e.platforms[r.k]?.[r.s]||0; const best=lb?v===Math.min(...vals.filter(x=>x>0)):v===mx;
+                          return <td key={ei} style={{padding:"10px 12px",textAlign:"center",fontWeight:best?700:400,color:best?C.accent:ei===0?C.text:C.textMuted}}>{r.f?r.f(v):v}{best && <span style={{color:C.secondary, marginLeft:4}}>&#9733;</span>}</td>;
+                        })}
+                      </tr>;
+                    })}</tbody>
+                  </table></div>
+                </Card>
+              </div>}
+
+              {/* ═══ SUGGESTIONS ═══ */}
+              {activeTab==="suggestions" && <div className="fade-in" style={{display:"flex", flexDirection:"column", gap:16}}>
+                <Card style={{background:`linear-gradient(135deg,${C.primary}18,${C.secondary}12)`, border:`1px solid ${C.primary}30`}}>
+                  <div style={{display:"flex", alignItems:"center", gap:12}}>{Icons.zap({size:28, color:C.secondary})}<div><h3 style={{fontFamily:"'Unbounded',sans-serif", fontSize:16, fontWeight:700, margin:0}}>Motor de Sugerencias IA</h3><p style={{margin:"4px 0 0", color:C.textMuted, fontSize:14}}>{suggestions.length} recomendaciones para {client.name}</p></div></div>
+                </Card>
+                {suggestions.map((s,i) => {
+                  const pc = {alta:C.danger,media:C.secondary,baja:C.accent,info:C.primary}[s.priority];
+                  return <Card key={i} style={{borderLeft:`4px solid ${pc}`}}>
+                    <div style={{display:"flex", alignItems:"flex-start", gap:16}}>
+                      <div style={{background:pc+"20", borderRadius:10, padding:10}}>{Icons.lightbulb({size:20, color:pc})}</div>
+                      <div style={{flex:1}}>
+                        <div style={{display:"flex", gap:8, marginBottom:8}}><Badge color={pc}>{s.priority}</Badge><Badge color={C.textDim}>{s.platform}</Badge></div>
+                        <h4 style={{margin:"0 0 8px", fontSize:15, fontWeight:600}}>{s.title}</h4>
+                        <p style={{margin:"0 0 10px", color:C.textMuted, fontSize:14, lineHeight:1.6}}>{s.detail}</p>
+                        <div style={{display:"flex", alignItems:"center", gap:6, color:C.accent, fontSize:13, fontWeight:500}}>{Icons.trendUp({size:14, color:C.accent})}{s.impact}</div>
+                      </div>
+                    </div>
+                  </Card>;
+                })}
+              </div>}
+
+              {/* ═══ COMPETITORS ═══ */}
+              {activeTab==="competitors" && <div className="fade-in" style={{display:"flex", flexDirection:"column", gap:20}}>
+                {comps.length===0 ? <Card style={{textAlign:"center", padding:60}}>
+                  {Icons.users({size:48, color:C.textDim})}<h3 style={{color:C.textMuted, fontWeight:500, fontFamily:"'Unbounded',sans-serif", fontSize:16, marginTop:16}}>Sin competidores</h3><p style={{color:C.textDim, fontSize:14}}>Agrega competidores para el analisis.</p>
+                  <button onClick={()=>setShowAddComp(true)} style={{marginTop:16, padding:"10px 24px", borderRadius:10, border:"none", background:`linear-gradient(135deg,${C.primary},${C.primaryDark})`, color:"#fff", cursor:"pointer", fontSize:14, fontWeight:600, boxShadow:"0 4px 16px rgba(125,3,255,0.3)"}}>{Icons.plus({size:16, color:"#fff", style:{verticalAlign:"middle", marginRight:6}})}Agregar</button>
+                </Card> : comps.map((comp,idx) => <Card key={comp.id}>
+                  <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:20}}>
+                    <div style={{display:"flex", alignItems:"center", gap:16}}><ScoreRing score={overallScore(comp)} size={52}/><div><h3 style={{margin:0, fontSize:16, fontWeight:600, fontFamily:"'Unbounded',sans-serif"}}>{comp.name}</h3><span style={{color:C.textMuted, fontSize:12}}>Score: {overallScore(comp)}/100</span></div></div>
+                    <button onClick={()=>delComp(idx)} style={{background:C.danger+"15", border:"none", borderRadius:8, padding:8, cursor:"pointer"}}>{Icons.trash({size:16, color:C.danger})}</button>
+                  </div>
+                  <div style={{display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:12}}>
+                    {[
+                      {l:"IG Followers",v:fmt(comp.platforms.instagram?.followers),c:comp.platforms.instagram?.followers>client.platforms.instagram?.followers},
+                      {l:"IG Engagement",v:(comp.platforms.instagram?.engagement||0)+"%",c:comp.platforms.instagram?.engagement>client.platforms.instagram?.engagement},
+                      {l:"Web Visitas",v:fmt(comp.platforms.web?.monthlyVisits),c:comp.platforms.web?.monthlyVisits>client.platforms.web?.monthlyVisits},
+                      {l:"SEO Top10",v:comp.platforms.seo?.top10Keywords||0,c:comp.platforms.seo?.top10Keywords>client.platforms.seo?.top10Keywords},
+                      {l:"FB Followers",v:fmt(comp.platforms.facebook?.followers),c:comp.platforms.facebook?.followers>client.platforms.facebook?.followers},
+                      {l:"LI Followers",v:fmt(comp.platforms.linkedin?.followers),c:comp.platforms.linkedin?.followers>client.platforms.linkedin?.followers},
+                      {l:"DA",v:comp.platforms.web?.domainAuthority||0,c:comp.platforms.web?.domainAuthority>client.platforms.web?.domainAuthority},
+                      {l:"ROAS",v:(comp.platforms.googleAds?.roas||0)+"x",c:comp.platforms.googleAds?.roas>client.platforms.googleAds?.roas},
+                    ].map((m,mi)=><div key={mi} style={{background:C.bg+"80",borderRadius:10,padding:"10px 14px"}}>
+                      <div style={{color:C.textDim,fontSize:10,marginBottom:2}}>{m.l}</div>
+                      <div style={{fontSize:17,fontWeight:700,color:m.c?C.danger:C.accent,fontFamily:"'Unbounded',sans-serif"}}>{m.v}</div>
+                      <div style={{fontSize:10,color:m.c?C.danger:C.accent}}>{m.c?"Te supera":"Lo superas"}</div>
+                    </div>)}
+                  </div>
+                </Card>)}
+              </div>}
+
+              {/* ═══ EDIT ═══ */}
+              {activeTab==="data" && <div className="fade-in"><Card>
+                <h3 style={{fontFamily:"'Unbounded',sans-serif", fontSize:16, fontWeight:600, margin:"0 0 8px"}}>Editar {client.name}</h3>
+                <p style={{color:C.textMuted, fontSize:14, marginBottom:20}}>Cambios en tiempo real.</p>
+                <PlatformForm platforms={client.platforms} onChange={(p)=>{const u=[...clients]; u[selClient]={...u[selClient],platforms:p}; setClients(u);}}/>
+              </Card></div>}
+            </>}
+          </div>
+        </div>
+
+        {/* MODALS */}
+        {showAddClient && <Modal title="Nuevo Cliente" onClose={()=>{setShowAddClient(false);setNewEntity({name:"",platforms:{},notes:""})}} onSave={addClient}>
+          <Input label="Nombre" value={newEntity.name} onChange={v=>setNewEntity({...newEntity,name:v})} placeholder="MiEmpresa S.A." style={{marginBottom:16}}/>
+          <Input label="Notas" value={newEntity.notes} onChange={v=>setNewEntity({...newEntity,notes:v})} placeholder="Observaciones..." style={{marginBottom:20}}/>
+          <h4 style={{color:C.textMuted, fontSize:14, marginBottom:12}}>Plataformas (opcional)</h4>
+          <PlatformForm platforms={newEntity.platforms} onChange={p=>setNewEntity({...newEntity,platforms:p})}/>
+        </Modal>}
+
+        {showAddComp && <Modal title={`Competidor para ${client.name}`} onClose={()=>{setShowAddComp(false);setNewEntity({name:"",platforms:{},notes:""})}} onSave={addComp}>
+          <Input label="Nombre" value={newEntity.name} onChange={v=>setNewEntity({...newEntity,name:v})} placeholder="CompetenciaDirecta" style={{marginBottom:20}}/>
+          <h4 style={{color:C.textMuted, fontSize:14, marginBottom:12}}>Datos</h4>
+          <PlatformForm platforms={newEntity.platforms} onChange={p=>setNewEntity({...newEntity,platforms:p})}/>
+        </Modal>}
+
+        {showShare && <ShareModal client={client} onClose={()=>setShowShare(false)}/>}
+      </div>;
+    };
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+  </script>
+</body>
+</html>
