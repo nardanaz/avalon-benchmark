@@ -9,7 +9,86 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.10.3/Recharts.min.js"></script>
+  <script>
+  // Custom Recharts-compatible SVG chart library (lightweight replacement)
+  (function(){
+    var h=React.createElement;
+    function ResponsiveContainer(props){
+      var ref=React.useRef(null),_s=React.useState(0),w=_s[0],setW=_s[1];
+      React.useEffect(function(){if(!ref.current)return;var ro=new ResizeObserver(function(e){setW(e[0].contentRect.width)});ro.observe(ref.current);return function(){ro.disconnect()}},[]);
+      var ht=typeof props.height==='number'?props.height:300;
+      return h('div',{ref:ref,style:{width:'100%',height:ht}},w>0?React.Children.map(props.children,function(c){return c?React.cloneElement(c,{_w:w,_h:ht}):null}):null);
+    }
+    function PolarGrid(){return null}
+    function PolarAngleAxis(){return null}
+    function PolarRadiusAxis(){return null}
+    function CartesianGrid(){return null}
+    function XAxis(){return null}
+    function YAxis(){return null}
+    function Tooltip(){return null}
+    function BarComp(){return null}
+    function RadarComp(){return null}
+    function Legend(){return null}
+
+    function RadarChart(props){
+      var data=props.data||[],w=props._w||400,ht=props._h||300;
+      var cx=w/2,cy=ht/2-15,r=Math.min(cx,cy)-40,n=data.length;
+      if(n===0)return h('svg',{width:w,height:ht});
+      var radars=[];
+      React.Children.forEach(props.children,function(c){if(c&&c.type===RadarComp)radars.push(c.props)});
+      function ang(i){return(Math.PI*2*i/n)-Math.PI/2}
+      function px(i,v){return cx+r*(v/100)*Math.cos(ang(i))}
+      function py(i,v){return cy+r*(v/100)*Math.sin(ang(i))}
+      var els=[];
+      [20,40,60,80,100].forEach(function(v,gi){
+        var pts=[];for(var i=0;i<n;i++)pts.push(px(i,v)+','+py(i,v));
+        els.push(h('polygon',{key:'g'+gi,points:pts.join(' '),fill:'none',stroke:'#2a1f4e',strokeWidth:1,opacity:0.5}));
+      });
+      for(var i=0;i<n;i++){
+        els.push(h('line',{key:'a'+i,x1:cx,y1:cy,x2:px(i,100),y2:py(i,100),stroke:'#2a1f4e',strokeWidth:1,opacity:0.5}));
+        var lx=cx+(r+22)*Math.cos(ang(i)),ly=cy+(r+22)*Math.sin(ang(i));
+        var ta=Math.abs(Math.cos(ang(i)))<0.1?'middle':Math.cos(ang(i))>0?'start':'end';
+        els.push(h('text',{key:'l'+i,x:lx,y:ly,textAnchor:ta,dominantBaseline:'central',fill:'#a3a3c2',fontSize:12},data[i].platform||''));
+      }
+      radars.forEach(function(rp,ri){
+        var pts=[];for(var i=0;i<n;i++){var v=data[i][rp.dataKey]||0;pts.push(px(i,v)+','+py(i,v))}
+        els.push(h('polygon',{key:'r'+ri,points:pts.join(' '),fill:rp.fill||rp.stroke,fillOpacity:rp.fillOpacity||0.1,stroke:rp.stroke,strokeWidth:rp.strokeWidth||2}));
+      });
+      var leg=[];
+      radars.forEach(function(rp,ri){
+        leg.push(h('span',{key:'lg'+ri,style:{display:'inline-flex',alignItems:'center',gap:4,marginRight:16,fontSize:12,color:'#a3a3c2'}},h('span',{style:{display:'inline-block',width:10,height:10,borderRadius:2,background:rp.stroke}}),rp.name));
+      });
+      return h('div',null,h('svg',{width:w,height:ht-25},els),h('div',{style:{textAlign:'center',marginTop:4}},leg));
+    }
+
+    function BarChart(props){
+      var data=props.data||[],w=props._w||400,ht=props._h||300,isV=props.layout==='vertical';
+      var bars=[];
+      React.Children.forEach(props.children,function(c){if(c&&c.type===BarComp)bars.push(c.props)});
+      if(!data.length||!bars.length)return h('svg',{width:w,height:ht});
+      var xP={},yP={};
+      React.Children.forEach(props.children,function(c){if(c&&c.type===XAxis)xP=c.props||{};if(c&&c.type===YAxis)yP=c.props||{}});
+      var ml=isV?(yP.width||95):50,mr=20,mt=10,mb=40;
+      var cW=w-ml-mr,cH=ht-mt-mb;
+      var mx=0;data.forEach(function(d){bars.forEach(function(b){var v=d[b.dataKey]||0;if(v>mx)mx=v})});mx=mx*1.1||1;
+      var fmtX=xP.tickFormatter||function(v){return v};
+      var els=[];
+      if(isV){
+        var bgH=cH/data.length,bH=Math.min(bgH*0.7/bars.length,20),gp=bgH*0.15;
+        for(var g=0;g<=4;g++){var gx=ml+(cW*g/4);els.push(h('line',{key:'gv'+g,x1:gx,y1:mt,x2:gx,y2:mt+cH,stroke:'#2a1f4e',strokeDasharray:'3,3'}));els.push(h('text',{key:'tx'+g,x:gx,y:mt+cH+16,textAnchor:'middle',fill:'#a3a3c2',fontSize:11},fmtX(Math.round(mx*g/4))))}
+        data.forEach(function(d,di){var gy=mt+di*bgH+gp;els.push(h('text',{key:'yl'+di,x:ml-8,y:gy+(bars.length*bH)/2,textAnchor:'end',dominantBaseline:'central',fill:'#a3a3c2',fontSize:11},d.name||''));bars.forEach(function(b,bi){var v=d[b.dataKey]||0,bw=(v/mx)*cW;els.push(h('rect',{key:'b'+di+'_'+bi,x:ml,y:gy+bi*bH,width:Math.max(bw,0),height:bH-2,fill:b.fill,rx:3,ry:3,opacity:0.85}))})});
+      }else{
+        var bgW=cW/data.length,bW=Math.min(bgW*0.7/bars.length,30),pad=(bgW-bW*bars.length)/2;
+        for(var g=0;g<=4;g++){var gy2=mt+cH-(cH*g/4);els.push(h('line',{key:'gh'+g,x1:ml,y1:gy2,x2:ml+cW,y2:gy2,stroke:'#2a1f4e',strokeDasharray:'3,3'}));els.push(h('text',{key:'ty'+g,x:ml-8,y:gy2,textAnchor:'end',dominantBaseline:'central',fill:'#a3a3c2',fontSize:11},Math.round(mx*g/4)))}
+        data.forEach(function(d,di){var gx2=ml+di*bgW+pad;els.push(h('text',{key:'xl'+di,x:ml+di*bgW+bgW/2,y:mt+cH+16,textAnchor:'middle',fill:'#a3a3c2',fontSize:11},d.name||''));bars.forEach(function(b,bi){var v=d[b.dataKey]||0,bh2=(v/mx)*cH;els.push(h('rect',{key:'b'+di+'_'+bi,x:gx2+bi*bW,y:mt+cH-bh2,width:bW-2,height:Math.max(bh2,0),fill:b.fill,rx:3,ry:3,opacity:0.85}))})});
+      }
+      var leg=[];bars.forEach(function(b,bi){leg.push(h('span',{key:'lg'+bi,style:{display:'inline-flex',alignItems:'center',gap:4,marginRight:16,fontSize:12,color:'#a3a3c2'}},h('span',{style:{display:'inline-block',width:10,height:10,borderRadius:2,background:b.fill}}),b.dataKey))});
+      return h('div',null,h('svg',{width:w,height:ht-20},els),h('div',{style:{textAlign:'center',marginTop:2}},leg));
+    }
+
+    window.Recharts={ResponsiveContainer:ResponsiveContainer,RadarChart:RadarChart,Radar:RadarComp,PolarGrid:PolarGrid,PolarAngleAxis:PolarAngleAxis,PolarRadiusAxis:PolarRadiusAxis,BarChart:BarChart,Bar:BarComp,XAxis:XAxis,YAxis:YAxis,CartesianGrid:CartesianGrid,Tooltip:Tooltip,Legend:Legend};
+  })();
+  </script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <style>
