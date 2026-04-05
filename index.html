@@ -855,6 +855,31 @@
       const [userRole, setUserRole] = useState("director");
       const [pdfLoading, setPdfLoading] = useState(false);
       const [viewClientData, setViewClientData] = useState(null);
+        const [dataLoaded, setDataLoaded] = useState(false);
+        const saveTimer = useRef(null);
+
+        useEffect(() => {
+          fetch(WORKER_URL + '/api/clients').then(r => r.json()).then(data => {
+            if (data.success && data.clients && data.clients.length > 0) {
+              setClients(data.clients);
+            }
+            setDataLoaded(true);
+          }).catch(() => setDataLoaded(true));
+        }, []);
+
+        useEffect(() => {
+          if (!dataLoaded) return;
+          if (saveTimer.current) clearTimeout(saveTimer.current);
+          saveTimer.current = setTimeout(() => {
+            fetch(WORKER_URL + '/api/clients', {
+              method: 'POST',
+              headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify({clients: clients})
+            }).catch(() => {});
+          }, 1500);
+          return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
+        }, [clients, dataLoaded]);
+
 
       // Check URL for client view mode
       useEffect(() => {
