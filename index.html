@@ -15,7 +15,7 @@
     var h=React.createElement;
     function ResponsiveContainer(props){
       var ref=React.useRef(null),_s=React.useState(0),w=_s[0],setW=_s[1];
-      React.useEffect(function(){if(!ref.current)return;var ro=new ResizeObserver(function(e){setW(e[0].contentRect.width)});ro.observe(ref.current);return function(){ro.disconnect()}},[]);
+      React.useEffect(function(){if(!ref.current)return;var rg=new ResizeObserver(function(e){setW(e[0].contentRect.width)});ro.observe(ref.current);return function(){ro.disconnect()}},[]);
       var ht=typeof props.height==='number'?props.height:300;
       return h('div',{ref:ref,style:{width:'100%',height:ht}},w>0?React.Children.map(props.children,function(c){return c?React.cloneElement(c,{_w:w,_h:ht}):null}):null);
     }
@@ -184,6 +184,44 @@
       </svg>
     );
 
+    // ─── AUTO-FETCH CONFIG ───
+    const WORKER_URL = "https://shy-limit-11e6avalon-benchmark-api.nardanaz01.workers.dev";
+
+    const syncPlatform = async (platform, handle) => {
+      if (!WORKER_URL) return { error: "Worker URL no configurado. Desplegá el Cloudflare Worker primero." };
+      if (!handle || !handle.trim()) return { error: "Handle/URL vacío" };
+      try {
+        const res = await fetch(WORKER_URL + '/api/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ platform, handle: handle.trim() }),
+        });
+        return await res.json();
+      } catch (e) {
+        return { error: "Error de conexión: " + e.message };
+      }
+    };
+
+    const syncAllPlatforms = async (platforms) => {
+      if (!WORKER_URL) return { error: "Worker URL no configurado" };
+      const handles = {};
+      Object.entries(platforms).forEach(([k, v]) => {
+        if (v?.handle) handles[k] = v.handle;
+        else if (v?.url) handles[k] = v.url;
+      });
+      if (Object.keys(handles).length === 0) return { error: "Cargá al menos un handle o URL" };
+      try {
+        const res = await fetch(WORKER_URL + '/api/sync-all', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ handles }),
+        });
+        return await res.json();
+      } catch (e) {
+        return { error: "Error de conexión: " + e.message };
+      }
+    };
+
     // ─── DEMO DATA ───
     const createClient = (name, ig, fb, tw, li, web) => ({
       id: Math.random().toString(36).substr(2, 9),
@@ -196,7 +234,9 @@
         web: { url: web, monthlyVisits: Math.floor(Math.random()*100000)+5000, bounceRate: +(Math.random()*40+30).toFixed(1), avgSessionDuration: +(Math.random()*3+1).toFixed(1), domainAuthority: Math.floor(Math.random()*60)+15 },
         seo: { keywordsRanked: Math.floor(Math.random()*500)+50, top10Keywords: Math.floor(Math.random()*50)+5, backlinks: Math.floor(Math.random()*5000)+200, organicTraffic: Math.floor(Math.random()*50000)+2000 },
         email: { subscribers: Math.floor(Math.random()*10000)+500, openRate: +(Math.random()*25+15).toFixed(1), clickRate: +(Math.random()*8+1).toFixed(1), campaignsPerMonth: Math.floor(Math.random()*8)+2 },
-        googleAds: { monthlyBudget: Math.floor(Math.random()*5000)+500, cpc: +(Math.random()*2+0.3).toFixed(2), ctr: +(Math.random()*5+1).toFixed(2), conversions: Math.floor(Math.random()*200)+20, roas: +(Math.random()*4+1).toFixed(2) }
+        googleAds: { monthlyBudget: Math.floor(Math.random()*5000)+500, cpc: +(Math.random()*2+0.3).toFixed(2), ctr: +(Math.random()*5+1).toFixed(2), conversions: Math.floor(Math.random()*200)+20, roas: +(Math.random()*4+1).toFixed(2) },
+        tiktok: { handle: "", followers: 0, engagement: 0, videosPerWeek: 0, avgViews: 0, avgLikes: 0 },
+        pinterest: { handle: "", followers: 0, monthlyViews: 0, boards: 0, pins: 0, engagement: 0 }
       },
       competitors: [], notes: "",
       sharePassword: Math.random().toString(36).substr(2, 8)
@@ -238,12 +278,14 @@
         seo: () => Math.min(100, Math.round((d.top10Keywords*2)+(d.backlinks/100)+(d.organicTraffic/1000))),
         email: () => Math.min(100, Math.round((d.openRate*2)+(d.clickRate*5)+(d.subscribers/200))),
         googleAds: () => Math.min(100, Math.round((d.ctr*8)+(d.roas*15)+(d.conversions/5))),
+        tiktok: () => Math.min(100, Math.round((d.followers/500)+(d.engagement*10)+(d.videosPerWeek*3))),
+        pinterest: () => Math.min(100, Math.round((d.followers/300)+(d.engagement*8)+(d.pins/50))),
       };
       return (scores[p] || (() => 0))();
     };
 
     const overallScore = (e) => {
-      const ps = ["instagram","facebook","twitter","linkedin","web","seo","email","googleAds"];
+      const ps = ["instagram","facebook","twitter","linkedin","tiktok","pinterest","web","seo","email","googleAds"];
       return Math.round(ps.map(p => platScore(e,p)).reduce((a,b) => a+b, 0) / ps.length);
     };
 
@@ -320,7 +362,7 @@
       doc.text('Scores por Plataforma', 15, y);
       y += 8;
 
-      const platforms = ["instagram","facebook","twitter","linkedin","web","seo","email","googleAds"];
+      const platforms = ["instagram","facebook","twitter","linkedin","tiktok","pinterest","web","seo","email","googleAds"];
       const platNames = ["Instagram","Facebook","Twitter/X","LinkedIn","Web","SEO","Email","Google Ads"];
       doc.setFontSize(10);
       doc.setFont('helvetica', 'normal');
@@ -498,27 +540,109 @@
     </div>;
 
     // ─── PLATFORM FORM ───
-    const PlatformForm = ({platforms, onChange}) => {
+    const PlatformForm = ({platforms, onChange, entityName}) => {
       const [exp, setExp] = useState(null);
+      const [syncing, setSyncing] = useState({});
+      const [syncStatus, setSyncStatus] = useState({});
       const sections = [
-        {key:"instagram", label:"Instagram", fields:[{k:"handle",l:"Handle",p:"@cuenta"},{k:"followers",l:"Seguidores",t:"number"},{k:"engagement",l:"Engagement %",t:"number"},{k:"postsPerWeek",l:"Posts/semana",t:"number"},{k:"avgLikes",l:"Likes promedio",t:"number"},{k:"avgComments",l:"Comentarios",t:"number"},{k:"reelsViews",l:"Views Reels",t:"number"},{k:"storiesPerDay",l:"Stories/dia",t:"number"}]},
-        {key:"facebook", label:"Facebook", fields:[{k:"handle",l:"Pagina"},{k:"followers",l:"Seguidores",t:"number"},{k:"engagement",l:"Engagement %",t:"number"},{k:"postsPerWeek",l:"Posts/semana",t:"number"}]},
-        {key:"twitter", label:"X / Twitter", fields:[{k:"handle",l:"Handle"},{k:"followers",l:"Seguidores",t:"number"},{k:"engagement",l:"Engagement %",t:"number"},{k:"tweetsPerWeek",l:"Tweets/semana",t:"number"}]},
-        {key:"linkedin", label:"LinkedIn", fields:[{k:"handle",l:"Perfil"},{k:"followers",l:"Seguidores",t:"number"},{k:"engagement",l:"Engagement %",t:"number"},{k:"postsPerWeek",l:"Posts/semana",t:"number"}]},
-        {key:"web", label:"Web", fields:[{k:"url",l:"URL"},{k:"monthlyVisits",l:"Visitas/mes",t:"number"},{k:"bounceRate",l:"Bounce %",t:"number"},{k:"domainAuthority",l:"DA",t:"number"}]},
-        {key:"seo", label:"SEO", fields:[{k:"keywordsRanked",l:"KW rankeadas",t:"number"},{k:"top10Keywords",l:"KW top 10",t:"number"},{k:"backlinks",l:"Backlinks",t:"number"},{k:"organicTraffic",l:"Trafico organico",t:"number"}]},
-        {key:"email", label:"Email", fields:[{k:"subscribers",l:"Suscriptores",t:"number"},{k:"openRate",l:"Open Rate %",t:"number"},{k:"clickRate",l:"Click Rate %",t:"number"},{k:"campaignsPerMonth",l:"Campanas/mes",t:"number"}]},
-        {key:"googleAds", label:"Google Ads", fields:[{k:"monthlyBudget",l:"Budget USD",t:"number"},{k:"cpc",l:"CPC",t:"number"},{k:"ctr",l:"CTR %",t:"number"},{k:"conversions",l:"Conversiones",t:"number"},{k:"roas",l:"ROAS",t:"number"}]},
+        {key:"instagram", label:"Instagram", syncable:true, handleKey:"handle", fields:[{k:"handle",l:"Handle",p:"@cuenta"},{k:"followers",l:"Seguidores",t:"number"},{k:"engagement",l:"Engagement %",t:"number"},{k:"postsPerWeek",l:"Posts/semana",t:"number"},{k:"avgLikes",l:"Likes promedio",t:"number"},{k:"avgComments",l:"Comentarios",t:"number"},{k:"reelsViews",l:"Views Reels",t:"number"},{k:"storiesPerDay",l:"Stories/dia",t:"number"}]},
+        {key:"facebook", label:"Facebook", syncable:true, handleKey:"handle", fields:[{k:"handle",l:"Pagina"},{k:"followers",l:"Seguidores",t:"number"},{k:"engagement",l:"Engagement %",t:"number"},{k:"postsPerWeek",l:"Posts/semana",t:"number"}]},
+        {key:"twitter", label:"X / Twitter", syncable:true, handleKey:"handle", fields:[{k:"handle",l:"Handle"},{k:"followers",l:"Seguidores",t:"number"},{k:"engagement",l:"Engagement %",t:"number"},{k:"tweetsPerWeek",l:"Tweets/semana",t:"number"}]},
+        {key:"linkedin", label:"LinkedIn", syncable:true, handleKey:"handle", fields:[{k:"handle",l:"Perfil"},{k:"followers",l:"Seguidores",t:"number"},{k:"engagement",l:"Engagement %",t:"number"},{k:"postsPerWeek",l:"Posts/semana",t:"number"}]},
+        {key:"tiktok", label:"TikTok", syncable:true, handleKey:"handle", fields:[{k:"handle",l:"Handle",p:"@cuenta"},{k:"followers",l:"Seguidores",t:"number"},{k:"engagement",l:"Engagement %",t:"number"},{k:"videosPerWeek",l:"Videos/semana",t:"number"},{k:"avgViews",l:"Views promedio",t:"number"},{k:"avgLikes",l:"Likes promedio",t:"number"}]},
+        {key:"pinterest", label:"Pinterest", syncable:true, handleKey:"handle", fields:[{k:"handle",l:"Handle",p:"@cuenta"},{k:"followers",l:"Seguidores",t:"number"},{k:"monthlyViews",l:"Views mensuales",t:"number"},{k:"boards",l:"Boards",t:"number"},{k:"pins",l:"Pins",t:"number"},{k:"engagement",l:"Engagement %",t:"number"}]},
+        {key:"web", label:"Web / SEO", syncable:true, handleKey:"url", fields:[{k:"url",l:"URL",p:"ejemplo.com"},{k:"monthlyVisits",l:"Visitas/mes",t:"number"},{k:"bounceRate",l:"Bounce %",t:"number"},{k:"domainAuthority",l:"DA",t:"number"},{k:"backlinks",l:"Backlinks",t:"number"},{k:"referringDomains",l:"Dominios referentes",t:"number"},{k:"organicKeywords",l:"Keywords organicas",t:"number"},{k:"organicTraffic",l:"Trafico organico",t:"number"}]},
+        {key:"email", label:"Email", syncable:false, fields:[{k:"subscribers",l:"Suscriptores",t:"number"},{k:"openRate",l:"Open Rate %",t:"number"},{k:"clickRate",l:"Click Rate %",t:"number"},{k:"campaignsPerMonth",l:"Campanas/mes",t:"number"}]},
+        {key:"googleAds", label:"Google Ads", syncable:false, fields:[{k:"monthlyBudget",l:"Budget USD",t:"number"},{k:"cpc",l:"CPC",t:"number"},{k:"ctr",l:"CTR %",t:"number"},{k:"conversions",l:"Conversiones",t:"number"},{k:"roas",l:"ROAS",t:"number"}]},
       ];
       const update = (sk, fk, v) => { const u={...platforms}; if(!u[sk]) u[sk]={}; u[sk]={...u[sk],[fk]:fk==="handle"||fk==="url"?v:parseFloat(v)||0}; onChange(u); };
+
+      const doSync = async (sectionKey, handleKey) => {
+        const handle = platforms[sectionKey]?.[handleKey];
+        if (!handle) { setSyncStatus(s=>({...s,[sectionKey]:{error:"Cargá el handle/URL primero"}})); return; }
+        setSyncing(s=>({...s,[sectionKey]:true}));
+        setSyncStatus(s=>({...s,[sectionKey]:null}));
+        const platform = sectionKey === "web" ? "web" : sectionKey;
+        const result = await syncPlatform(platform, handle);
+        setSyncing(s=>({...s,[sectionKey]:false}));
+        if (result.success && result.data) {
+          const u = {...platforms};
+          if (!u[sectionKey]) u[sectionKey] = {};
+          u[sectionKey] = {...u[sectionKey], ...result.data};
+          // For web, also update SEO fields
+          if (sectionKey === "web" && result.data) {
+            if (!u.seo) u.seo = {};
+            if (result.data.backlinks) u.seo.backlinks = result.data.backlinks;
+            if (result.data.organicKeywords) u.seo.top10Keywords = Math.round(result.data.organicKeywords * 0.1);
+            if (result.data.organicTraffic) u.seo.organicTraffic = result.data.organicTraffic;
+            if (result.data.organicKeywords) u.seo.keywordsRanked = result.data.organicKeywords;
+          }
+          onChange(u);
+          setSyncStatus(s=>({...s,[sectionKey]:{ok:true}}));
+          setTimeout(()=>setSyncStatus(s=>({...s,[sectionKey]:null})), 3000);
+        } else {
+          setSyncStatus(s=>({...s,[sectionKey]:{error:result.error||"Error desconocido"}}));
+        }
+      };
+
+      const doSyncAll = async () => {
+        setSyncing(s=>({...s,_all:true}));
+        const handles = {};
+        sections.filter(s=>s.syncable).forEach(s => {
+          const h = platforms[s.key]?.[s.handleKey];
+          if (h && h.trim()) handles[s.key] = h.trim();
+        });
+        if (Object.keys(handles).length === 0) {
+          setSyncStatus(s=>({...s,_all:{error:"Cargá al menos un handle o URL"}}));
+          setSyncing(s=>({...s,_all:false}));
+          return;
+        }
+        const result = await syncAllPlatforms(platforms);
+        setSyncing(s=>({...s,_all:false}));
+        if (result.success && result.results) {
+          const u = {...platforms};
+          Object.entries(result.results).forEach(([k, r]) => {
+            if (r.success && r.data) {
+              if (!u[k]) u[k] = {};
+              u[k] = {...u[k], ...r.data};
+              if (k === "web" && r.data) {
+                if (!u.seo) u.seo = {};
+                if (r.data.backlinks) u.seo.backlinks = r.data.backlinks;
+                if (r.data.organicKeywords) u.seo.top10Keywords = Math.round(r.data.organicKeywords * 0.1);
+                if (r.data.organicTraffic) u.seo.organicTraffic = r.data.organicTraffic;
+              }
+            }
+          });
+          onChange(u);
+          setSyncStatus(s=>({...s,_all:{ok:true}}));
+          setTimeout(()=>setSyncStatus(s=>({...s,_all:null})), 3000);
+        } else {
+          setSyncStatus(s=>({...s,_all:{error:result.error||"Error en sincronización"}}));
+        }
+      };
+
       return <div style={{display:"flex", flexDirection:"column", gap:8}}>
-        {sections.map(s => <div key={s.key} style={{border:`1px solid ${C.border}`, borderRadius:12, overflow:"hidden"}}>
-          <button onClick={()=>setExp(exp===s.key?null:s.key)} style={{width:"100%", display:"flex", alignItems:"center", gap:10, padding:"12px 16px", background:exp===s.key?C.primary+"15":"transparent", border:"none", cursor:"pointer", color:C.text, fontSize:14, fontWeight:500, fontFamily:"'Poppins',sans-serif"}}>
+        <button onClick={doSyncAll} disabled={syncing._all || !WORKER_URL} style={{display:"flex", alignItems:"center", justifyContent:"center", gap:8, padding:"12px 24px", borderRadius:12, border:"none", background:syncing._all?"#333":(WORKER_URL?`linear-gradient(135deg,#7d03ff,#5a02bb)`:"#222"), color:WORKER_URL?"#fff":"#666", cursor:WORKER_URL?"pointer":"not-allowed", fontSize:14, fontWeight:600, fontFamily:"'Poppins',sans-serif", marginBottom:8, opacity:syncing._all?0.7:1}}>
+          {syncing._all ? "⟳ Sincronizando todas las plataformas..." : "⚡ Sincronizar Todo Automáticamente"}
+        </button>
+        {!WORKER_URL && <p style={{color:"#ff7939", fontSize:12, textAlign:"center", margin:"-4px 0 8px"}}>⚠ Configurá WORKER_URL en el código para habilitar auto-fetch</p>}
+        {syncStatus._all?.ok && <p style={{color:"#00ff00", fontSize:12, textAlign:"center", margin:"-4px 0 8px"}}>✓ Datos sincronizados exitosamente</p>}
+        {syncStatus._all?.error && <p style={{color:"#ff4757", fontSize:12, textAlign:"center", margin:"-4px 0 8px"}}>✗ {syncStatus._all.error}</p>}
+        {sections.map(s => <div key={s.key} style={{border:`1px solid #1e1245`, borderRadius:12, overflow:"hidden"}}>
+          <button onClick={()=>setExp(exp===s.key?null:s.key)} style={{width:"100%", display:"flex", alignItems:"center", gap:10, padding:"12px 16px", background:exp===s.key?"rgba(125,3,255,0.08)":"transparent", border:"none", cursor:"pointer", color:"#f8fafc", fontSize:14, fontWeight:500, fontFamily:"'Poppins',sans-serif"}}>
             {s.label}
-            <div style={{marginLeft:"auto"}}>{exp===s.key ? Icons.chevronD({size:16}) : Icons.chevronR({size:16})}</div>
+            {syncStatus[s.key]?.ok && <span style={{color:"#00ff00", fontSize:11, marginLeft:4}}>✓</span>}
+            {syncing[s.key] && <span style={{color:"#ff7939", fontSize:11, marginLeft:4}}>⟳</span>}
+            <div style={{marginLeft:"auto", display:"flex", alignItems:"center", gap:8}}>
+              {s.syncable && platforms[s.key]?.[s.handleKey] && WORKER_URL && <span onClick={(e)=>{e.stopPropagation(); doSync(s.key, s.handleKey)}} style={{color:"#7d03ff", fontSize:11, padding:"2px 8px", borderRadius:6, border:"1px solid rgba(125,3,255,0.3)", cursor:"pointer", background:"rgba(125,3,255,0.1)"}}>
+                {syncing[s.key] ? "⟳" : "Sync"}
+              </span>}
+              {exp===s.key ? "▾" : "▸"}
+            </div>
           </button>
-          {exp===s.key && <div style={{padding:16, display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, background:C.bg+"60"}}>
+          {exp===s.key && <div style={{padding:16, display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, background:"rgba(10,6,24,0.6)"}}>
             {s.fields.map(f => <Input key={f.k} label={f.l} placeholder={f.p||""} type={f.t||"text"} value={platforms[s.key]?.[f.k]||""} onChange={v=>update(s.key,f.k,v)}/>)}
+            {syncStatus[s.key]?.error && <div style={{gridColumn:"1/-1", color:"#ff4757", fontSize:12}}>✗ {syncStatus[s.key].error}</div>}
           </div>}
         </div>)}
       </div>;
@@ -633,7 +757,7 @@
     // ─── CLIENT VIEW (READ ONLY) ───
     const ClientView = ({client, competitors}) => {
       const suggestions = genSuggestions(client, competitors);
-      const radarData = ["instagram","facebook","twitter","linkedin","web","seo","email","googleAds"].map(p => {
+      const radarData = ["instagram","facebook","twitter","linkedin","tiktok","pinterest","web","seo","email","googleAds"].map(p => {
         const item = {platform: p==="googleAds"?"G.Ads":p.charAt(0).toUpperCase()+p.slice(1)};
         item[client.name] = platScore(client,p);
         competitors.forEach(c => { item[c.name] = platScore(c,p); });
@@ -674,7 +798,7 @@
             <Card>
               <h3 style={{fontFamily:"'Unbounded',sans-serif", fontSize:14, fontWeight:600, margin:"0 0 20px"}}>Score por Plataforma</h3>
               <div style={{display:"grid", gridTemplateColumns:"repeat(2,1fr)", gap:20}}>
-                {["instagram","facebook","twitter","linkedin","web","seo","email","googleAds"].map(p =>
+                {["instagram","facebook","twitter","linkedin","tiktok","pinterest","web","seo","email","googleAds"].map(p =>
                   <ScoreRing key={p} score={platScore(client,p)} size={60} label={p==="googleAds"?"G.Ads":p.charAt(0).toUpperCase()+p.slice(1)}/>
                 )}
               </div>
@@ -778,7 +902,7 @@
       const handlePDF = async () => { setPdfLoading(true); try { await generatePDF(client, comps); } catch(e) { console.error(e); } setPdfLoading(false); };
 
       // Chart data
-      const radarData = ["instagram","facebook","twitter","linkedin","web","seo","email","googleAds"].map(p => {
+      const radarData = ["instagram","facebook","twitter","linkedin","tiktok","pinterest","web","seo","email","googleAds"].map(p => {
         const item = {platform: p==="googleAds"?"G.Ads":p.charAt(0).toUpperCase()+p.slice(1)};
         item[client.name] = platScore(client,p);
         comps.forEach(c => { item[c.name] = platScore(c,p); });
@@ -874,7 +998,7 @@
                 </div>
                 <div style={{display:"grid", gridTemplateColumns:"1fr 2fr", gap:24}}>
                   <Card><h3 style={{fontFamily:"'Unbounded',sans-serif", fontSize:14, fontWeight:600, margin:"0 0 20px"}}>Scores</h3>
-                    <div style={{display:"grid", gridTemplateColumns:"repeat(2,1fr)", gap:18}}>{["instagram","facebook","twitter","linkedin","web","seo","email","googleAds"].map(p => <ScoreRing key={p} score={platScore(client,p)} size={60} label={p==="googleAds"?"G.Ads":p.charAt(0).toUpperCase()+p.slice(1)}/>)}</div>
+                    <div style={{display:"grid", gridTemplateColumns:"repeat(2,1fr)", gap:18}}>{["instagram","facebook","twitter","linkedin","tiktok","pinterest","web","seo","email","googleAds"].map(p => <ScoreRing key={p} score={platScore(client,p)} size={60} label={p==="googleAds"?"G.Ads":p.charAt(0).toUpperCase()+p.slice(1)}/>)}</div>
                   </Card>
                   <Card><h3 style={{fontFamily:"'Unbounded',sans-serif", fontSize:14, fontWeight:600, margin:"0 0 16px"}}>Radar Competitivo</h3>
                     <ResponsiveContainer width="100%" height={310}>
@@ -988,8 +1112,8 @@
               {/* ═══ EDIT ═══ */}
               {activeTab==="data" && <div className="fade-in"><Card>
                 <h3 style={{fontFamily:"'Unbounded',sans-serif", fontSize:16, fontWeight:600, margin:"0 0 8px"}}>Editar {client.name}</h3>
-                <p style={{color:C.textMuted, fontSize:14, marginBottom:20}}>Cambios en tiempo real.</p>
-                <PlatformForm platforms={client.platforms} onChange={(p)=>{const u=[...clients]; u[selClient]={...u[selClient],platforms:p}; setClients(u);}}/>
+                <p style={{color:C.textMuted, fontSize:14, marginBottom:20}}>Cargá los handles y URLs, luego hacé click en "Sincronizar Todo" para traer los datos automáticamente.</p>
+                <PlatformForm platforms={client.platforms} entityName={client.name} onChange={(p)=>{const u=[...clients]; u[selClient]={...u[selClient],platforms:p}; setClients(u);}}/>
               </Card></div>}
             </>}
           </div>
@@ -1000,13 +1124,13 @@
           <Input label="Nombre" value={newEntity.name} onChange={v=>setNewEntity({...newEntity,name:v})} placeholder="MiEmpresa S.A." style={{marginBottom:16}}/>
           <Input label="Notas" value={newEntity.notes} onChange={v=>setNewEntity({...newEntity,notes:v})} placeholder="Observaciones..." style={{marginBottom:20}}/>
           <h4 style={{color:C.textMuted, fontSize:14, marginBottom:12}}>Plataformas (opcional)</h4>
-          <PlatformForm platforms={newEntity.platforms} onChange={p=>setNewEntity({...newEntity,platforms:p})}/>
+          <PlatformForm platforms={newEntity.platforms} entityName={newEntity.name} onChange={p=>setNewEntity({...newEntity,platforms:p})}/>
         </Modal>}
 
         {showAddComp && <Modal title={`Competidor para ${client.name}`} onClose={()=>{setShowAddComp(false);setNewEntity({name:"",platforms:{},notes:""})}} onSave={addComp}>
           <Input label="Nombre" value={newEntity.name} onChange={v=>setNewEntity({...newEntity,name:v})} placeholder="CompetenciaDirecta" style={{marginBottom:20}}/>
           <h4 style={{color:C.textMuted, fontSize:14, marginBottom:12}}>Datos</h4>
-          <PlatformForm platforms={newEntity.platforms} onChange={p=>setNewEntity({...newEntity,platforms:p})}/>
+          <PlatformForm platforms={newEntity.platforms} entityName={newEntity.name} onChange={p=>setNewEntity({...newEntity,platforms:p})}/>
         </Modal>}
 
         {showShare && <ShareModal client={client} onClose={()=>setShowShare(false)}/>}
