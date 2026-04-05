@@ -1,0 +1,58 @@
+name: Add persistence to dashboard
+on: workflow_dispatch
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Add persistence code
+        run: |
+          python3 << 'PYEOF'
+          import re
+          with open('index.html', 'r') as f:
+              content = f.read()
+          old = "const [viewClientData, setViewClientData] = useState(null);"
+          new_code = old + """
+      const [dataLoaded, setDataLoaded] = useState(false);
+      const saveTimer = useRef(null);
+
+      useEffect(() => {
+        fetch(WORKER_URL + '/api/clients').then(r => r.json()).then(data => {
+          if (data.success && data.clients && data.clients.length > 0) {
+            setClients(data.clients);
+          }
+          setDataLoaded(true);
+        }).catch(() => setDataLoaded(true));
+      }, []);
+
+      useEffect(() => {
+        if (!dataLoaded) return;
+        if (saveTimer.current) clearTimeout(saveTimer.current);
+        saveTimer.current = setTimeout(() => {
+          fetch(WORKER_URL + '/api/clients', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({clients: clients})
+          }).catch(() => {});
+        }, 1500);
+        return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
+      }, [clients, dataLoaded]);"""
+          content = content.replace(old, new_code, 1)
+          with open('index.html', 'w') as f:
+              f.write(content)
+          print('Persistence code added')
+          PYEOF
+      - name: Commit
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add index.html
+          git diff --cached --quiet || git commit -m "Add server-side persistence for client data"
+          git push
+      - name: Cleanup workflow
+        run: |
+          git rm .github/workflows/deploy.yml
+          git commit -m "Remove deploy workflow"
+          git push
