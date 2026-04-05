@@ -15,7 +15,7 @@
     var h=React.createElement;
     function ResponsiveContainer(props){
       var ref=React.useRef(null),_s=React.useState(0),w=_s[0],setW=_s[1];
-      React.useEffect(function(){if(!ref.current)return;var rg=new ResizeObserver(function(e){setW(e[0].contentRect.width)});ro.observe(ref.current);return function(){ro.disconnect()}},[]);
+      React.useEffect(function(){if(!ref.current)return;var ro=new ResizeObserver(function(e){setW(e[0].contentRect.width)});ro.observe(ref.current);return function(){ro.disconnect()}},[]);
       var ht=typeof props.height==='number'?props.height:300;
       return h('div',{ref:ref,style:{width:'100%',height:ht}},w>0?React.Children.map(props.children,function(c){return c?React.cloneElement(c,{_w:w,_h:ht}):null}):null);
     }
